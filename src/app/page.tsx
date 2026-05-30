@@ -61,6 +61,7 @@ export default function Home() {
   const [importingQuestions, setImportingQuestions] = useState(false);
   const [message, setMessage] = useState("Create or join a room to begin.");
   const [loading, setLoading] = useState(false);
+  const roomNotFoundCount = useState(0);
 
   const loadHistory = useCallback(async () => {
     try {
@@ -93,20 +94,29 @@ export default function Home() {
       const state = await api<PublicRoomState>(
         `/api/rooms/${session.roomCode}?playerId=${encodeURIComponent(session.playerId)}`,
       );
+      roomNotFoundCount[1](0);
       setRoom(state);
       setMessage(`Room ${state.code} | Phase: ${state.phase}`);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Failed to sync room state.";
       if (errorMessage.toLowerCase().includes("room not found")) {
-        setSession(null);
-        setRoom(null);
-        localStorage.removeItem(STORAGE_KEY);
-        setMessage("Your previous room no longer exists. Please create or join a new room.");
+        roomNotFoundCount[1]((prev) => {
+          const next = prev + 1;
+          if (next >= 4) {
+            setSession(null);
+            setRoom(null);
+            localStorage.removeItem(STORAGE_KEY);
+            setMessage("Your previous room no longer exists. Please create or join a new room.");
+          } else {
+            setMessage("Room temporarily unavailable, retrying…");
+          }
+          return next;
+        });
         return;
       }
       setMessage(errorMessage);
     }
-  }, [session]);
+  }, [session, roomNotFoundCount]);
 
   useEffect(() => {
     if (!session) {
@@ -407,6 +417,28 @@ export default function Home() {
               <p className="mt-4 text-xs text-cyan-200">
                 Import a JSON question set before starting. Without import, the default sample board is used.
               </p>
+            )}
+
+            {room.phase === "lobby" && (
+              <div className="mt-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Players in lobby ({room.players.filter((p) => !p.isHost).length})</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {room.players.filter((p) => !p.isHost).length === 0 ? (
+                    <p className="text-sm text-slate-400">Waiting for players to join…</p>
+                  ) : (
+                    room.players
+                      .filter((p) => !p.isHost)
+                      .map((p) => (
+                        <span
+                          key={p.id}
+                          className="rounded-full border border-cyan-300/40 bg-cyan-400/10 px-3 py-1 text-sm text-cyan-100"
+                        >
+                          {p.name}{p.id === session.playerId ? " (you)" : ""}
+                        </span>
+                      ))
+                  )}
+                </div>
+              </div>
             )}
           </section>
 
