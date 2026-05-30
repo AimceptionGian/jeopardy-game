@@ -428,11 +428,18 @@ export default function Home() {
             {room.phase === "lobby" && isHost && (
               <div className="mt-3 rounded-xl border border-cyan-300/30 bg-slate-950/60 p-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-cyan-200">Board from DB</p>
+                <p className="mt-1 text-xs text-slate-300">Selecting a board applies it immediately.</p>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <select
                     className="min-w-[260px] rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-cyan-300 transition focus:ring"
                     value={selectedBoardId}
-                    onChange={(event) => setSelectedBoardId(event.target.value)}
+                    onChange={(event) => {
+                      const boardId = event.target.value;
+                      setSelectedBoardId(boardId);
+                      if (boardId) {
+                        void sendAction({ type: "setBoard", boardId });
+                      }
+                    }}
                     disabled={loadingBoards || boardLibrary.length === 0}
                   >
                     {boardLibrary.length === 0 ? (
@@ -445,18 +452,6 @@ export default function Home() {
                       ))
                     )}
                   </select>
-                  <button
-                    className="rounded-xl bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
-                    onClick={() => {
-                      if (!selectedBoardId) {
-                        return;
-                      }
-                      void sendAction({ type: "setBoard", boardId: selectedBoardId });
-                    }}
-                    disabled={loadingBoards || !selectedBoardId}
-                  >
-                    Use selected board
-                  </button>
                   <button
                     className="rounded-xl border border-slate-500 px-3 py-2 text-xs font-semibold text-slate-200 disabled:cursor-not-allowed disabled:text-slate-500"
                     onClick={() => void loadBoardLibrary()}
