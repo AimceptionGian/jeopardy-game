@@ -218,7 +218,7 @@ export default function Home() {
   }
 
   async function sendAction(payload: {
-    type: "start" | "select" | "buzz" | "skipClue" | "submit" | "judge" | "finalSubmit" | "finalResolve" | "setCategories";
+    type: "start" | "reset" | "select" | "buzz" | "skipClue" | "submit" | "judge" | "finalSubmit" | "finalResolve" | "setCategories";
     clueId?: string;
     answer?: string;
     isCorrect?: boolean;
@@ -584,7 +584,18 @@ export default function Home() {
 
           {room.phase === "finished" && (
             <section className="rounded-3xl border border-emerald-300/50 bg-slate-900/70 p-6">
-              <h3 className="text-2xl font-bold text-emerald-200">Match complete</h3>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h3 className="text-2xl font-bold text-emerald-200">Match complete</h3>
+                {isHost && (
+                  <button
+                    className="rounded-xl bg-cyan-300 px-4 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+                    onClick={() => void sendAction({ type: "reset" })}
+                    disabled={loading}
+                  >
+                    New game (same lobby)
+                  </button>
+                )}
+              </div>
               <p className="mt-2 text-slate-200">Great game. Here is the final podium and ranking.</p>
 
               <div className="mt-5 grid gap-3 sm:grid-cols-3">

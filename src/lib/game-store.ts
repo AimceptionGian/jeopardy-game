@@ -466,6 +466,35 @@ export async function deleteBoardFromLibrary(boardId: string) {
   return result.deletedCount > 0;
 }
 
+export async function resetRoom(roomCode: string, playerId: string) {
+  const room = await getRoomOrThrow(roomCode);
+  const player = getPlayerOrThrow(room, playerId);
+
+  if (!player.isHost) {
+    throw new Error("Only host can reset the room.");
+  }
+
+  if (room.phase !== "finished") {
+    throw new Error("Room can only be reset after a match is finished.");
+  }
+
+  // Reset scores and remove the host-only flag logic; keep all current players.
+  for (const p of room.players) {
+    p.score = 0;
+  }
+
+  room.phase = "lobby";
+  room.selectorId = room.hostId;
+  room.usedClueIds = [];
+  room.categories = cloneCategories(sampleBoard);
+  clearActiveClue(room);
+  room.finalPrompt = undefined;
+  room.finalSubmissions = {};
+  room.finalResolved = false;
+  touchRoom(room);
+  await saveRoom(room);
+}
+
 export async function startGame(roomCode: string, playerId: string) {
   const room = await getRoomOrThrow(roomCode);
   const player = getPlayerOrThrow(room, playerId);

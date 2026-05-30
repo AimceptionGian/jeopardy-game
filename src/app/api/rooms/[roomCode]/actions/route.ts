@@ -2,6 +2,7 @@ import {
   buzz,
   judgeAnswer,
   resolveFinal,
+  resetRoom,
   selectClue,
   setRoomCategories,
   skipClue,
@@ -14,6 +15,7 @@ import { NextResponse } from "next/server";
 
 type ActionType =
   | "start"
+  | "reset"
   | "select"
   | "buzz"
   | "skipClue"
@@ -49,6 +51,9 @@ export async function POST(
     switch (body.type) {
       case "start":
         await startGame(roomCode, playerId);
+        break;
+      case "reset":
+        await resetRoom(roomCode, playerId);
         break;
       case "select":
         if (!body.clueId) {
