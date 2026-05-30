@@ -18,7 +18,7 @@ export async function POST(
       return NextResponse.json({ error: "name is required" }, { status: 400 });
     }
 
-    const joined = joinRoom(roomCode, name);
+    const joined = await joinRoom(roomCode, name);
     return NextResponse.json(joined, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected error.";

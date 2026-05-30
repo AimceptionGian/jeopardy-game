@@ -38,34 +38,34 @@ export async function POST(
 
     switch (body.type) {
       case "start":
-        startGame(roomCode, playerId);
+        await startGame(roomCode, playerId);
         break;
       case "select":
         if (!body.clueId) {
           return NextResponse.json({ error: "clueId is required for select" }, { status: 400 });
         }
-        selectClue(roomCode, playerId, body.clueId);
+        await selectClue(roomCode, playerId, body.clueId);
         break;
       case "buzz":
-        buzz(roomCode, playerId);
+        await buzz(roomCode, playerId);
         break;
       case "submit":
         submitAnswer(roomCode, playerId, body.answer ?? "");
         break;
       case "judge":
-        judgeAnswer(roomCode, playerId, Boolean(body.isCorrect));
+        await judgeAnswer(roomCode, playerId, Boolean(body.isCorrect));
         break;
       case "finalSubmit":
-        submitFinal(roomCode, playerId, Number(body.wager ?? 0), body.answer ?? "");
+        await submitFinal(roomCode, playerId, Number(body.wager ?? 0), body.answer ?? "");
         break;
       case "finalResolve":
-        resolveFinal(roomCode, playerId);
+        await resolveFinal(roomCode, playerId);
         break;
       case "setCategories":
         if (!body.categories) {
           return NextResponse.json({ error: "categories are required for setCategories" }, { status: 400 });
         }
-        setRoomCategories(roomCode, playerId, body.categories);
+        await setRoomCategories(roomCode, playerId, body.categories);
         break;
       default:
         return NextResponse.json({ error: "Unsupported action type" }, { status: 400 });

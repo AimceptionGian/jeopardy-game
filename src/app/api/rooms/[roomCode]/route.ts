@@ -14,8 +14,8 @@ export async function GET(
       return NextResponse.json({ error: "playerId is required" }, { status: 400 });
     }
 
-    markOnline(roomCode, playerId);
-    const room = getRoomState(roomCode, playerId);
+    await markOnline(roomCode, playerId);
+    const room = await getRoomState(roomCode, playerId);
     return NextResponse.json(room);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected error.";

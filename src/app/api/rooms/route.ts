@@ -16,7 +16,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "hostName is required" }, { status: 400 });
     }
 
-    const created = createRoom(hostName, body.categories);
+    const created = await createRoom(hostName, body.categories);
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected error.";

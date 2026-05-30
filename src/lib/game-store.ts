@@ -1,23 +1,31 @@
+import { kv } from "@vercel/kv";
 import { sampleBoard } from "@/lib/sample-board";
 import type { Category, MatchHistoryEntry, PublicRoomState, Room } from "@/lib/types";
 
 const ROOM_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const ROOM_TTL_SECONDS = 60 * 60 * 24; // 24 hours
+const HISTORY_KEY = "jeopardy:history";
 
-const globalStore = globalThis as unknown as {
-  __jeopardyRooms?: Map<string, Room>;
-  __jeopardyHistory?: MatchHistoryEntry[];
-};
-
-if (!globalStore.__jeopardyRooms) {
-  globalStore.__jeopardyRooms = new Map<string, Room>();
+function roomKey(code: string) {
+  return `room:${code.toUpperCase()}`;
 }
 
-if (!globalStore.__jeopardyHistory) {
-  globalStore.__jeopardyHistory = [];
+async function loadRoom(roomCode: string): Promise<Room | null> {
+  return kv.get<Room>(roomKey(roomCode));
 }
 
-const rooms = globalStore.__jeopardyRooms;
-const history = globalStore.__jeopardyHistory;
+async function saveRoom(room: Room): Promise<void> {
+  await kv.set(roomKey(room.code), room, { ex: ROOM_TTL_SECONDS });
+}
+
+async function loadHistory(): Promise<MatchHistoryEntry[]> {
+  return (await kv.get<MatchHistoryEntry[]>(HISTORY_KEY)) ?? [];
+}
+
+async function saveHistory(entries: MatchHistoryEntry[]): Promise<void> {
+  await kv.set(HISTORY_KEY, entries);
+}
+
 const FINAL_PROMPT = {
   question: "Name the web protocol used for secure communication over the internet.",
   answer: "https",
@@ -31,12 +39,13 @@ function generateId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function generateRoomCode() {
+async function generateRoomCode(): Promise<string> {
   let code = "";
   for (let i = 0; i < 6; i += 1) {
     code += ROOM_CODE_CHARS[Math.floor(Math.random() * ROOM_CODE_CHARS.length)];
   }
-  if (rooms.has(code)) {
+  const existing = await loadRoom(code);
+  if (existing) {
     return generateRoomCode();
   }
   return code;
@@ -103,8 +112,8 @@ function getNextSelectorId(room: Room) {
   return contestants[nextIndex].id;
 }
 
-function getRoomOrThrow(roomCode: string) {
-  const room = rooms.get(roomCode.toUpperCase());
+async function getRoomOrThrow(roomCode: string): Promise<Room> {
+  const room = await loadRoom(roomCode.toUpperCase());
   if (!room) {
     throw new Error("Room not found.");
   }
@@ -143,7 +152,7 @@ function enterFinalRound(room: Room) {
   room.finalResolved = false;
 }
 
-function pushHistory(room: Room) {
+async function pushHistory(room: Room): Promise<void> {
   const ranking = getContestants(room)
     .map((player) => ({ id: player.id, name: player.name, score: player.score }))
     .sort((a, b) => b.score - a.score);
@@ -153,6 +162,7 @@ function pushHistory(room: Room) {
     return;
   }
 
+  const history = await loadHistory();
   history.unshift({
     id: generateId("match"),
     roomCode: room.code,
@@ -165,11 +175,13 @@ function pushHistory(room: Room) {
   if (history.length > 50) {
     history.length = 50;
   }
+
+  await saveHistory(history);
 }
 
-export function createRoom(hostName: string, categories?: Category[]) {
+export async function createRoom(hostName: string, categories?: Category[]) {
   const playerId = generateId("player");
-  const roomCode = generateRoomCode();
+  const roomCode = await generateRoomCode();
 
   const room: Room = {
     code: roomCode,
@@ -196,12 +208,12 @@ export function createRoom(hostName: string, categories?: Category[]) {
     updatedAt: now(),
   };
 
-  rooms.set(roomCode, room);
+  await saveRoom(room);
   return { roomCode, playerId };
 }
 
-export function joinRoom(roomCode: string, playerName: string) {
-  const room = getRoomOrThrow(roomCode);
+export async function joinRoom(roomCode: string, playerName: string) {
+  const room = await getRoomOrThrow(roomCode);
 
   if (room.phase !== "lobby") {
     throw new Error("Game already started.");
@@ -221,23 +233,26 @@ export function joinRoom(roomCode: string, playerName: string) {
     lastSeenAt: now(),
   });
   touchRoom(room);
+  await saveRoom(room);
 
   return { roomCode: room.code, playerId };
 }
 
-export function markOnline(roomCode: string, playerId: string) {
-  const room = getRoomOrThrow(roomCode);
+export async function markOnline(roomCode: string, playerId: string) {
+  const room = await getRoomOrThrow(roomCode);
   const player = getPlayerOrThrow(room, playerId);
   player.connected = true;
   player.lastSeenAt = now();
   touchRoom(room);
+  await saveRoom(room);
 }
 
-export function getRoomState(roomCode: string, playerId: string): PublicRoomState {
-  const room = getRoomOrThrow(roomCode);
+export async function getRoomState(roomCode: string, playerId: string): Promise<PublicRoomState> {
+  const room = await getRoomOrThrow(roomCode);
   const viewer = getPlayerOrThrow(room, playerId);
   viewer.connected = true;
   viewer.lastSeenAt = now();
+  await saveRoom(room);
 
   const activeCategory = room.categories.find((category) =>
     category.clues.some((entry) => entry.id === room.activeClueId),
@@ -288,12 +303,13 @@ export function getRoomState(roomCode: string, playerId: string): PublicRoomStat
   };
 }
 
-export function getMatchHistory(limit = 15) {
+export async function getMatchHistory(limit = 15) {
+  const history = await loadHistory();
   return history.slice(0, Math.max(1, Math.min(50, limit)));
 }
 
-export function startGame(roomCode: string, playerId: string) {
-  const room = getRoomOrThrow(roomCode);
+export async function startGame(roomCode: string, playerId: string) {
+  const room = await getRoomOrThrow(roomCode);
   const player = getPlayerOrThrow(room, playerId);
   const contestants = getContestants(room);
 
@@ -308,10 +324,11 @@ export function startGame(roomCode: string, playerId: string) {
   room.phase = "board";
   room.selectorId = contestants[0].id;
   touchRoom(room);
+  await saveRoom(room);
 }
 
-export function setRoomCategories(roomCode: string, playerId: string, categories: Category[]) {
-  const room = getRoomOrThrow(roomCode);
+export async function setRoomCategories(roomCode: string, playerId: string, categories: Category[]) {
+  const room = await getRoomOrThrow(roomCode);
   const player = getPlayerOrThrow(room, playerId);
 
   if (!player.isHost) {
@@ -330,10 +347,11 @@ export function setRoomCategories(roomCode: string, playerId: string, categories
   room.submittedAnswer = undefined;
   room.attemptedPlayerIds = [];
   touchRoom(room);
+  await saveRoom(room);
 }
 
-export function selectClue(roomCode: string, playerId: string, clueId: string) {
-  const room = getRoomOrThrow(roomCode);
+export async function selectClue(roomCode: string, playerId: string, clueId: string) {
+  const room = await getRoomOrThrow(roomCode);
   getPlayerOrThrow(room, playerId);
 
   if (room.phase !== "board") {
@@ -358,10 +376,11 @@ export function selectClue(roomCode: string, playerId: string, clueId: string) {
   room.attemptedPlayerIds = [];
   room.phase = "judging";
   touchRoom(room);
+  await saveRoom(room);
 }
 
-export function buzz(roomCode: string, playerId: string) {
-  const room = getRoomOrThrow(roomCode);
+export async function buzz(roomCode: string, playerId: string) {
+  const room = await getRoomOrThrow(roomCode);
   const player = getPlayerOrThrow(room, playerId);
 
   if (player.isHost) {
@@ -381,17 +400,18 @@ export function buzz(roomCode: string, playerId: string) {
   room.buzzedPlayerId = playerId;
   room.phase = "judging";
   touchRoom(room);
+  await saveRoom(room);
 }
 
-export function submitAnswer(roomCode: string, playerId: string, answer: string) {
+export function submitAnswer(roomCode: string, playerId: string, answer: string): never {
   void roomCode;
   void playerId;
   void answer;
   throw new Error("Answer text input is disabled. Players answer verbally and host judges directly.");
 }
 
-export function judgeAnswer(roomCode: string, playerId: string, isCorrect: boolean) {
-  const room = getRoomOrThrow(roomCode);
+export async function judgeAnswer(roomCode: string, playerId: string, isCorrect: boolean) {
+  const room = await getRoomOrThrow(roomCode);
   const player = getPlayerOrThrow(room, playerId);
 
   if (!player.isHost) {
@@ -433,6 +453,7 @@ export function judgeAnswer(roomCode: string, playerId: string, isCorrect: boole
     }
 
     touchRoom(room);
+    await saveRoom(room);
     return;
   }
 
@@ -456,10 +477,11 @@ export function judgeAnswer(roomCode: string, playerId: string, isCorrect: boole
     room.phase = "clue";
   }
   touchRoom(room);
+  await saveRoom(room);
 }
 
-export function submitFinal(roomCode: string, playerId: string, wager: number, answer: string) {
-  const room = getRoomOrThrow(roomCode);
+export async function submitFinal(roomCode: string, playerId: string, wager: number, answer: string) {
+  const room = await getRoomOrThrow(roomCode);
   const player = getPlayerOrThrow(room, playerId);
   const contestants = getContestants(room);
 
@@ -499,10 +521,11 @@ export function submitFinal(roomCode: string, playerId: string, wager: number, a
     submittedAt: now(),
   };
   touchRoom(room);
+  await saveRoom(room);
 }
 
-export function resolveFinal(roomCode: string, playerId: string) {
-  const room = getRoomOrThrow(roomCode);
+export async function resolveFinal(roomCode: string, playerId: string) {
+  const room = await getRoomOrThrow(roomCode);
   const player = getPlayerOrThrow(room, playerId);
   const contestants = getContestants(room);
 
@@ -533,6 +556,7 @@ export function resolveFinal(roomCode: string, playerId: string) {
 
   room.finalResolved = true;
   room.phase = "finished";
-  pushHistory(room);
+  await pushHistory(room);
   touchRoom(room);
+  await saveRoom(room);
 }
