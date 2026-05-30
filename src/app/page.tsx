@@ -19,6 +19,7 @@ type BoardSummary = {
 };
 
 const STORAGE_KEY = "jeopardy-session-v1";
+const SOUND_VOLUME_KEY = "jeopardy-sound-volume-v1";
 
 function readStoredSession(): Session | null {
   if (typeof window === "undefined") {
@@ -67,12 +68,17 @@ export default function Home() {
   const [boardLibrary, setBoardLibrary] = useState<BoardSummary[]>([]);
   const [selectedBoardId, setSelectedBoardId] = useState("");
   const [loadingBoards, setLoadingBoards] = useState(false);
+  const [localPlayerName, setLocalPlayerName] = useState("");
   const [clueOverlayOpen, setClueOverlayOpen] = useState(true);
   const [message, setMessage] = useState("Create or join a room to begin.");
   const [loading, setLoading] = useState(false);
   const roomNotFoundCount = useState(0);
   const loadedBoardsForRoomRef = useRef<string | null>(null);
   const stablePlayerIdentityRef = useRef<{ playerId: string; name: string } | null>(null);
+  const [timerRemainingMs, setTimerRemainingMs] = useState(0);
+  const [soundVolume, setSoundVolume] = useState(70);
+  const lastTimerEventIdRef = useRef<string | null>(null);
+  const lastJudgeEventIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const restoreSession = setTimeout(() => {
@@ -87,6 +93,30 @@ export default function Home() {
 
     return () => clearTimeout(restoreSession);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const raw = localStorage.getItem(SOUND_VOLUME_KEY);
+    if (!raw) {
+      return;
+    }
+
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed)) {
+      setSoundVolume(Math.min(100, Math.max(0, Math.round(parsed))));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    localStorage.setItem(SOUND_VOLUME_KEY, String(soundVolume));
+  }, [soundVolume]);
 
   const clearSession = useCallback(() => {
     setSession(null);
@@ -173,16 +203,158 @@ export default function Home() {
       !self?.isHost &&
       !room.activeClue.attemptedPlayerIds.includes(session.playerId),
   );
+  const localModeHostCanPickBuzz = Boolean(
+    isHost && room?.mode === "local" && room?.phase === "clue" && room.activeClue && !room.activeClue.buzzedPlayerId,
+  );
+  const localBuzzCandidates = contestants.filter(
+    (player) => !room?.activeClue?.attemptedPlayerIds.includes(player.id),
+  );
   const isBuzzed = Boolean(room && session && room.activeClue?.buzzedPlayerId === session.playerId);
   const showClueOverlay = Boolean(room?.activeClue && clueOverlayOpen);
   const ranking = contestants.slice().sort((a, b) => b.score - a.score);
   const podium = ranking.slice(0, 3);
+
+  const playJudgeSound = useCallback((isCorrect: boolean) => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const context = new window.AudioContext();
+    const nowAt = context.currentTime;
+    const volume = Math.max(0, Math.min(1, soundVolume / 100));
+
+    if (volume <= 0) {
+      void context.close();
+      return;
+    }
+
+    if (isCorrect) {
+      const notes = [523.25, 659.25, 783.99];
+      notes.forEach((frequency, index) => {
+        const osc = context.createOscillator();
+        const gain = context.createGain();
+        osc.type = "triangle";
+        osc.frequency.value = frequency;
+        gain.gain.setValueAtTime(0.0001, nowAt + index * 0.08);
+        gain.gain.linearRampToValueAtTime(0.18 * volume, nowAt + index * 0.08 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, nowAt + index * 0.08 + 0.22);
+        osc.connect(gain);
+        gain.connect(context.destination);
+        osc.start(nowAt + index * 0.08);
+        osc.stop(nowAt + index * 0.08 + 0.24);
+      });
+    } else {
+      const osc = context.createOscillator();
+      const gain = context.createGain();
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(220, nowAt);
+      osc.frequency.exponentialRampToValueAtTime(110, nowAt + 0.42);
+      gain.gain.setValueAtTime(0.0001, nowAt);
+      gain.gain.linearRampToValueAtTime(0.2 * volume, nowAt + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, nowAt + 0.45);
+      osc.connect(gain);
+      gain.connect(context.destination);
+      osc.start(nowAt);
+      osc.stop(nowAt + 0.46);
+    }
+
+    setTimeout(() => {
+      void context.close();
+    }, 900);
+  }, [soundVolume]);
+
+  const playTimerSequence = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const context = new window.AudioContext();
+    const nowAt = context.currentTime + 0.02;
+    const volume = Math.max(0, Math.min(1, soundVolume / 100));
+
+    if (volume <= 0) {
+      void context.close();
+      return;
+    }
+
+    for (let second = 0; second < 10; second += 1) {
+      const beepAt = nowAt + second;
+      const urgency = second / 9;
+      const frequency = 330 + urgency * 420;
+      const osc = context.createOscillator();
+      const gain = context.createGain();
+
+      osc.type = "square";
+      osc.frequency.setValueAtTime(frequency, beepAt);
+      gain.gain.setValueAtTime(0.0001, beepAt);
+      gain.gain.linearRampToValueAtTime((0.08 + urgency * 0.18) * volume, beepAt + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, beepAt + 0.16);
+
+      osc.connect(gain);
+      gain.connect(context.destination);
+      osc.start(beepAt);
+      osc.stop(beepAt + 0.17);
+    }
+
+    const finalAt = nowAt + 10;
+    const finalOsc = context.createOscillator();
+    const finalGain = context.createGain();
+    finalOsc.type = "triangle";
+    finalOsc.frequency.setValueAtTime(880, finalAt);
+    finalGain.gain.setValueAtTime(0.0001, finalAt);
+    finalGain.gain.linearRampToValueAtTime(0.28 * volume, finalAt + 0.03);
+    finalGain.gain.exponentialRampToValueAtTime(0.0001, finalAt + 0.45);
+    finalOsc.connect(finalGain);
+    finalGain.connect(context.destination);
+    finalOsc.start(finalAt);
+    finalOsc.stop(finalAt + 0.46);
+
+    setTimeout(() => {
+      void context.close();
+    }, 11500);
+  }, [soundVolume]);
 
   useEffect(() => {
     if (room?.activeClue) {
       setClueOverlayOpen(true);
     }
   }, [room?.activeClue?.id]);
+
+  useEffect(() => {
+    if (!room?.timerEvent) {
+      setTimerRemainingMs(0);
+      return;
+    }
+
+    const expiresAt = room.timerEvent.startedAt + room.timerEvent.durationMs;
+    const updateRemaining = () => {
+      setTimerRemainingMs(Math.max(0, expiresAt - Date.now()));
+    };
+
+    updateRemaining();
+    const timer = setInterval(updateRemaining, 100);
+    return () => clearInterval(timer);
+  }, [room?.timerEvent?.id, room?.timerEvent?.startedAt, room?.timerEvent?.durationMs]);
+
+  useEffect(() => {
+    const eventId = room?.timerEvent?.id;
+    if (!eventId || lastTimerEventIdRef.current === eventId) {
+      return;
+    }
+
+    lastTimerEventIdRef.current = eventId;
+    playTimerSequence();
+  }, [room?.timerEvent?.id, playTimerSequence]);
+
+  useEffect(() => {
+    const event = room?.judgeEvent;
+    if (!event || lastJudgeEventIdRef.current === event.id) {
+      return;
+    }
+
+    lastJudgeEventIdRef.current = event.id;
+    playJudgeSound(event.isCorrect);
+  }, [room?.judgeEvent, playJudgeSound]);
 
   const loadBoardLibrary = useCallback(async () => {
     setLoadingBoards(true);
@@ -286,13 +458,21 @@ export default function Home() {
       | "finalSubmit"
       | "finalResolve"
       | "setCategories"
-      | "setBoard";
+      | "setBoard"
+      | "triggerTimer"
+      | "setMode"
+      | "addLocalPlayer"
+      | "localBuzz"
+      | "removePlayer";
     clueId?: string;
     answer?: string;
     isCorrect?: boolean;
     wager?: number;
     categories?: Category[];
     boardId?: string;
+    mode?: "online" | "local";
+    name?: string;
+    targetPlayerId?: string;
   }) {
     if (!session) {
       return;
@@ -395,7 +575,30 @@ export default function Home() {
           <section className="rounded-3xl border border-white/20 bg-slate-900/70 p-6 shadow-xl backdrop-blur">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-lg font-semibold text-white">Room {room.code}</h2>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="flex items-center gap-2 rounded-xl border border-slate-600 bg-slate-950/70 px-3 py-2 text-xs text-slate-200">
+                  <span className="font-semibold">Sound</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={soundVolume}
+                    onChange={(event) => setSoundVolume(Number(event.target.value))}
+                    className="h-1 w-24 accent-cyan-300"
+                    aria-label="Sound volume"
+                  />
+                  <span className="w-8 text-right text-cyan-200">{soundVolume}%</span>
+                </label>
+                {room.phase !== "lobby" && isHost && (
+                  <button
+                    className="rounded-xl border border-fuchsia-300/70 bg-fuchsia-400/15 px-4 py-2 text-sm font-semibold text-fuchsia-100 transition hover:bg-fuchsia-400/25 disabled:cursor-not-allowed disabled:border-slate-600 disabled:bg-slate-800 disabled:text-slate-500"
+                    onClick={() => void sendAction({ type: "triggerTimer" })}
+                    disabled={timerRemainingMs > 0}
+                  >
+                    {timerRemainingMs > 0 ? `Timer ${Math.ceil(timerRemainingMs / 1000)}s` : "Start 10s Timer"}
+                  </button>
+                )}
                 {room.phase === "lobby" && isHost && (
                   <label className="cursor-pointer rounded-xl border border-cyan-300/60 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-400/20">
                     {importingQuestions ? "Importing..." : "Import Questions JSON"}
@@ -433,8 +636,76 @@ export default function Home() {
             </div>
 
             {room.phase === "lobby" && isHost && (
+              <div className="mt-4 rounded-xl border border-fuchsia-300/30 bg-slate-950/60 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-fuchsia-200">Mode</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    className={`rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                      room.mode === "online"
+                        ? "border border-cyan-300/70 bg-cyan-400/20 text-cyan-100"
+                        : "border border-slate-600 bg-slate-900 text-slate-300 hover:border-cyan-300/40"
+                    }`}
+                    onClick={() => void sendAction({ type: "setMode", mode: "online" })}
+                  >
+                    Online
+                  </button>
+                  <button
+                    className={`rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                      room.mode === "local"
+                        ? "border border-fuchsia-300/70 bg-fuchsia-400/20 text-fuchsia-100"
+                        : "border border-slate-600 bg-slate-900 text-slate-300 hover:border-fuchsia-300/40"
+                    }`}
+                    onClick={() => void sendAction({ type: "setMode", mode: "local" })}
+                  >
+                    Local (one device)
+                  </button>
+                </div>
+                <p className="mt-2 text-xs text-slate-300">
+                  {room.mode === "local"
+                    ? "Host controls all players on this device."
+                    : "Players join this room code from their own devices."}
+                </p>
+              </div>
+            )}
+
+            {room.phase === "lobby" && isHost && room.mode === "local" && (
+              <div className="mt-3 rounded-xl border border-amber-300/30 bg-slate-950/60 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-amber-200">Add Local Players</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <input
+                    className="w-full max-w-xs rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-amber-300 transition focus:ring"
+                    value={localPlayerName}
+                    onChange={(event) => setLocalPlayerName(event.target.value)}
+                    placeholder="Player name"
+                  />
+                  <button
+                    className="rounded-xl border border-amber-300/70 bg-amber-400/15 px-3 py-2 text-xs font-semibold text-amber-100 transition hover:bg-amber-400/25 disabled:cursor-not-allowed disabled:border-slate-600 disabled:bg-slate-800 disabled:text-slate-500"
+                    onClick={() => {
+                      const trimmed = localPlayerName.trim();
+                      if (!trimmed) {
+                        setMessage("Enter a player name first.");
+                        return;
+                      }
+                      setLocalPlayerName("");
+                      void sendAction({ type: "addLocalPlayer", name: trimmed });
+                    }}
+                    disabled={!localPlayerName.trim()}
+                  >
+                    Add player
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {room.phase === "lobby" && isHost && room.mode === "online" && (
               <p className="mt-4 text-xs text-cyan-200">
                 Import a JSON question set before starting. Without import, the default sample board is used.
+              </p>
+            )}
+
+            {room.phase === "lobby" && isHost && room.mode === "local" && (
+              <p className="mt-4 text-xs text-amber-200">
+                Local mode active: add at least 2 local players, then start the match.
               </p>
             )}
 
@@ -486,12 +757,29 @@ export default function Home() {
                     room.players
                       .filter((p) => !p.isHost)
                       .map((p) => (
-                        <span
+                        <div
                           key={p.id}
-                          className="rounded-full border border-cyan-300/40 bg-cyan-400/10 px-3 py-1 text-sm text-cyan-100"
+                          className="flex items-center gap-2 rounded-full border border-cyan-300/40 bg-cyan-400/10 px-3 py-1 text-sm text-cyan-100"
                         >
-                          {p.name}{isCurrentSessionPlayer(p) ? " (you)" : ""}
-                        </span>
+                          <span>
+                            {p.name}{isCurrentSessionPlayer(p) ? " (you)" : ""}
+                          </span>
+                          {isHost && (
+                            <button
+                              className="rounded-full border border-rose-300/70 bg-rose-400/15 px-2 py-0.5 text-[11px] font-semibold text-rose-100 transition hover:bg-rose-400/30"
+                              onClick={() => {
+                                const actionLabel = room.mode === "local" ? "remove" : "kick";
+                                const confirmed = window.confirm(`Really ${actionLabel} ${p.name}?`);
+                                if (!confirmed) {
+                                  return;
+                                }
+                                void sendAction({ type: "removePlayer", targetPlayerId: p.id });
+                              }}
+                            >
+                              {room.mode === "local" ? "Remove" : "Kick"}
+                            </button>
+                          )}
+                        </div>
                       ))
                   )}
                 </div>
@@ -501,6 +789,11 @@ export default function Home() {
 
           {room.phase !== "lobby" && room.phase !== "finished" && (
             <section className="overflow-hidden rounded-3xl border border-cyan-400/30 bg-slate-900/70 p-4 shadow-xl backdrop-blur">
+              {timerRemainingMs > 0 && (
+                <div className="mb-3 rounded-xl border border-fuchsia-300/50 bg-fuchsia-400/10 px-3 py-2 text-sm font-semibold text-fuchsia-100">
+                  10s Timer: {Math.ceil(timerRemainingMs / 1000)}
+                </div>
+              )}
               <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-cyan-200">
                 <span className="rounded-full border border-cyan-300/60 bg-cyan-400/10 px-3 py-1 font-semibold text-cyan-100">
                   Turn {turnPosition}/{Math.max(contestants.length, 1)}
@@ -518,17 +811,22 @@ export default function Home() {
                     </h3>
                     <div className="space-y-2">
                       {category.clues.map((clue) => {
-                        const canSelectClue = isSelector && room.phase === "board" && !clue.used;
+                        const isBoardSelectionPhase = room.phase === "board";
+                        const clueIsAvailable = !clue.used;
+                        const canSelectClue =
+                          room.phase === "board" && !clue.used && (isSelector || (isHost && room.mode === "local"));
 
                         return (
                           <button
                             key={clue.id}
                             className={`w-full rounded-lg border px-2 py-2 text-sm font-semibold transition ${
-                              clue.used
+                              !clueIsAvailable
                                 ? "cursor-not-allowed border-slate-700 bg-slate-800 text-slate-500"
                                 : canSelectClue
                                   ? "border-cyan-400/50 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/20"
-                                  : "cursor-default border-amber-300/50 bg-amber-300/10 text-amber-100"
+                                  : isBoardSelectionPhase
+                                    ? "cursor-default border-cyan-300/40 bg-cyan-400/5 text-cyan-200"
+                                    : "cursor-default border-amber-300/50 bg-amber-300/10 text-amber-100"
                             }`}
                             onClick={() => {
                               if (canSelectClue) {
@@ -654,6 +952,28 @@ export default function Home() {
                         ? "Only players who have not tried can buzz."
                         : "Buzz opens after a wrong answer."}
                     </span>
+                  </div>
+                )}
+
+                {localModeHostCanPickBuzz && (
+                  <div className="mt-4 rounded-xl border border-fuchsia-300/40 bg-fuchsia-400/10 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-fuchsia-200">
+                      Local mode: choose who buzzes
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {localBuzzCandidates.map((candidate) => (
+                        <button
+                          key={candidate.id}
+                          className="rounded-xl border border-fuchsia-300/70 bg-fuchsia-400/15 px-3 py-2 text-sm font-semibold text-fuchsia-100 transition hover:bg-fuchsia-400/25"
+                          onClick={() => void sendAction({ type: "localBuzz", targetPlayerId: candidate.id })}
+                        >
+                          Buzz as {candidate.name}
+                        </button>
+                      ))}
+                      {localBuzzCandidates.length === 0 && (
+                        <span className="text-sm text-slate-300">No eligible players left to buzz.</span>
+                      )}
+                    </div>
                   </div>
                 )}
 

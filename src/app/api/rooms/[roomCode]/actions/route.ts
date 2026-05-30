@@ -1,17 +1,21 @@
 import {
+  addLocalPlayer,
   buzz,
   judgeAnswer,
+  removePlayer,
   resolveFinal,
   resetRoom,
   selectClue,
+  setRoomMode,
   setRoomBoard,
   setRoomCategories,
   skipClue,
   startGame,
+  triggerRoomTimer,
   submitFinal,
   submitAnswer,
 } from "@/lib/game-store";
-import type { Category } from "@/lib/types";
+import type { Category, RoomMode } from "@/lib/types";
 import { NextResponse } from "next/server";
 
 type ActionType =
@@ -25,7 +29,12 @@ type ActionType =
   | "finalSubmit"
   | "finalResolve"
   | "setBoard"
-  | "setCategories";
+  | "setCategories"
+  | "triggerTimer"
+  | "setMode"
+  | "addLocalPlayer"
+  | "localBuzz"
+  | "removePlayer";
 
 interface ActionBody {
   type?: ActionType;
@@ -36,6 +45,9 @@ interface ActionBody {
   wager?: number;
   categories?: Category[];
   boardId?: string;
+  mode?: RoomMode;
+  name?: string;
+  targetPlayerId?: string;
 }
 
 export async function POST(
@@ -67,6 +79,12 @@ export async function POST(
       case "buzz":
         await buzz(roomCode, playerId);
         break;
+      case "localBuzz":
+        if (!body.targetPlayerId) {
+          return NextResponse.json({ error: "targetPlayerId is required for localBuzz" }, { status: 400 });
+        }
+        await buzz(roomCode, playerId, body.targetPlayerId);
+        break;
       case "skipClue":
         await skipClue(roomCode, playerId);
         break;
@@ -93,6 +111,27 @@ export async function POST(
           return NextResponse.json({ error: "boardId is required for setBoard" }, { status: 400 });
         }
         await setRoomBoard(roomCode, playerId, body.boardId);
+        break;
+      case "triggerTimer":
+        await triggerRoomTimer(roomCode, playerId);
+        break;
+      case "setMode":
+        if (!body.mode) {
+          return NextResponse.json({ error: "mode is required for setMode" }, { status: 400 });
+        }
+        await setRoomMode(roomCode, playerId, body.mode);
+        break;
+      case "addLocalPlayer":
+        if (!body.name) {
+          return NextResponse.json({ error: "name is required for addLocalPlayer" }, { status: 400 });
+        }
+        await addLocalPlayer(roomCode, playerId, body.name);
+        break;
+      case "removePlayer":
+        if (!body.targetPlayerId) {
+          return NextResponse.json({ error: "targetPlayerId is required for removePlayer" }, { status: 400 });
+        }
+        await removePlayer(roomCode, playerId, body.targetPlayerId);
         break;
       default:
         return NextResponse.json({ error: "Unsupported action type" }, { status: 400 });

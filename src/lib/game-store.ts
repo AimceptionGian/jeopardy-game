@@ -1,6 +1,6 @@
 import { MongoClient, type Db } from "mongodb";
 import { sampleBoard } from "@/lib/sample-board";
-import type { Category, MatchHistoryEntry, PublicRoomState, Room } from "@/lib/types";
+import type { Category, MatchHistoryEntry, PublicRoomState, Room, RoomMode } from "@/lib/types";
 
 const ROOM_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const DATABASE_NAME = process.env.MONGODB_DB ?? "jeopardy-online";
@@ -265,6 +265,7 @@ export async function createRoom(hostName: string, categories?: Category[]) {
 
   const room: Room = {
     code: roomCode,
+    mode: "online",
     phase: "lobby",
     players: [
       {
@@ -283,6 +284,8 @@ export async function createRoom(hostName: string, categories?: Category[]) {
     attemptedPlayerIds: [],
     finalSubmissions: {},
     finalResolved: false,
+    timerEvent: undefined,
+    judgeEvent: undefined,
     eventVersion: 1,
     createdAt: now(),
     updatedAt: now(),
@@ -297,6 +300,10 @@ export async function joinRoom(roomCode: string, playerName: string) {
 
   if (room.phase !== "lobby") {
     throw new Error("Game already started.");
+  }
+
+  if (room.mode === "local") {
+    throw new Error("This room is in local mode and cannot be joined online.");
   }
 
   if (room.players.some((player) => player.name.toLowerCase() === playerName.toLowerCase())) {
@@ -357,6 +364,7 @@ export async function getRoomState(roomCode: string, playerId: string): Promise<
   const clue = activeCategory?.clues.find((entry) => entry.id === room.activeClueId);
   return {
     code: room.code,
+    mode: room.mode,
     phase: room.phase,
     players: room.players,
     categories: room.categories.map((category) => ({
@@ -396,6 +404,8 @@ export async function getRoomState(roomCode: string, playerId: string): Promise<
           resolved: room.finalResolved,
         }
       : undefined,
+    timerEvent: room.timerEvent,
+    judgeEvent: room.judgeEvent,
     eventVersion: room.eventVersion,
   };
 }
@@ -496,6 +506,8 @@ export async function resetRoom(roomCode: string, playerId: string) {
   room.finalPrompt = undefined;
   room.finalSubmissions = {};
   room.finalResolved = false;
+  room.timerEvent = undefined;
+  room.judgeEvent = undefined;
   touchRoom(room);
   await saveRoom(room);
 }
@@ -519,6 +531,96 @@ export async function startGame(roomCode: string, playerId: string) {
   await saveRoom(room);
 }
 
+export async function setRoomMode(roomCode: string, playerId: string, mode: RoomMode) {
+  const room = await getRoomOrThrow(roomCode);
+  const player = getPlayerOrThrow(room, playerId);
+
+  if (!player.isHost) {
+    throw new Error("Only host can set room mode.");
+  }
+
+  if (room.phase !== "lobby") {
+    throw new Error("Room mode can only be changed in lobby.");
+  }
+
+  if (room.mode === mode) {
+    return;
+  }
+
+  const contestantCount = room.players.filter((entry) => !entry.isHost).length;
+  if (contestantCount > 0) {
+    throw new Error("Room mode can only be changed before players are added.");
+  }
+
+  room.mode = mode;
+  touchRoom(room);
+  await saveRoom(room);
+}
+
+export async function addLocalPlayer(roomCode: string, playerId: string, playerName: string) {
+  const room = await getRoomOrThrow(roomCode);
+  const player = getPlayerOrThrow(room, playerId);
+  const trimmedName = playerName.trim();
+
+  if (!player.isHost) {
+    throw new Error("Only host can add local players.");
+  }
+
+  if (room.phase !== "lobby") {
+    throw new Error("Local players can only be added in lobby.");
+  }
+
+  if (room.mode !== "local") {
+    throw new Error("Switch room to local mode first.");
+  }
+
+  if (!trimmedName) {
+    throw new Error("Player name is required.");
+  }
+
+  if (room.players.some((entry) => entry.name.toLowerCase() === trimmedName.toLowerCase())) {
+    throw new Error("Name is already used in this room.");
+  }
+
+  room.players.push({
+    id: generateId("player"),
+    name: trimmedName,
+    score: 0,
+    isHost: false,
+    connected: true,
+    lastSeenAt: now(),
+  });
+  touchRoom(room);
+  await saveRoom(room);
+}
+
+export async function removePlayer(roomCode: string, playerId: string, targetPlayerId: string) {
+  const room = await getRoomOrThrow(roomCode);
+  const player = getPlayerOrThrow(room, playerId);
+
+  if (!player.isHost) {
+    throw new Error("Only host can remove players.");
+  }
+
+  if (room.phase !== "lobby") {
+    throw new Error("Players can only be removed in lobby.");
+  }
+
+  const target = getPlayerOrThrow(room, targetPlayerId);
+  if (target.isHost) {
+    throw new Error("Host cannot be removed.");
+  }
+
+  room.players = room.players.filter((entry) => entry.id !== targetPlayerId);
+  room.attemptedPlayerIds = room.attemptedPlayerIds.filter((entry) => entry !== targetPlayerId);
+  if (room.selectorId === targetPlayerId) {
+    room.selectorId = room.hostId;
+  }
+
+  touchRoom(room);
+  await saveRoom(room);
+}
+
 export async function setRoomCategories(roomCode: string, playerId: string, categories: Category[]) {
   const room = await getRoomOrThrow(roomCode);
   const player = getPlayerOrThrow(room, playerId);
@@ -538,6 +640,8 @@ export async function setRoomCategories(roomCode: string, playerId: string, cate
   room.buzzedPlayerId = undefined;
   room.submittedAnswer = undefined;
   room.attemptedPlayerIds = [];
+  room.timerEvent = undefined;
+  room.judgeEvent = undefined;
   touchRoom(room);
   await saveRoom(room);
 }
@@ -566,19 +670,43 @@ export async function setRoomBoard(roomCode: string, playerId: string, boardId: 
   room.finalPrompt = undefined;
   room.finalSubmissions = {};
   room.finalResolved = false;
+  room.timerEvent = undefined;
+  room.judgeEvent = undefined;
+  touchRoom(room);
+  await saveRoom(room);
+}
+
+export async function triggerRoomTimer(roomCode: string, playerId: string) {
+  const room = await getRoomOrThrow(roomCode);
+  const player = getPlayerOrThrow(room, playerId);
+
+  if (!player.isHost) {
+    throw new Error("Only host can trigger timer.");
+  }
+
+  if (room.phase === "lobby") {
+    throw new Error("Timer is only available during an active match.");
+  }
+
+  room.timerEvent = {
+    id: generateId("timer"),
+    startedAt: now(),
+    durationMs: 10_000,
+  };
   touchRoom(room);
   await saveRoom(room);
 }
 
 export async function selectClue(roomCode: string, playerId: string, clueId: string) {
   const room = await getRoomOrThrow(roomCode);
-  getPlayerOrThrow(room, playerId);
+  const player = getPlayerOrThrow(room, playerId);
 
   if (room.phase !== "board") {
     throw new Error("Cannot select clue right now.");
   }
 
-  if (room.selectorId !== playerId) {
+  const hostActingInLocalMode = room.mode === "local" && player.isHost;
+  if (room.selectorId !== playerId && !hostActingInLocalMode) {
     throw new Error("Only current selector can pick a clue.");
   }
 
@@ -591,7 +719,7 @@ export async function selectClue(roomCode: string, playerId: string, clueId: str
   }
 
   room.activeClueId = clue.id;
-  room.buzzedPlayerId = playerId;
+  room.buzzedPlayerId = hostActingInLocalMode ? room.selectorId : playerId;
   room.submittedAnswer = undefined;
   room.attemptedPlayerIds = [];
   room.phase = "judging";
@@ -630,9 +758,12 @@ export async function skipClue(roomCode: string, playerId: string) {
   await saveRoom(room);
 }
 
-export async function buzz(roomCode: string, playerId: string) {
+export async function buzz(roomCode: string, playerId: string, targetPlayerId?: string) {
   const room = await getRoomOrThrow(roomCode);
-  const player = getPlayerOrThrow(room, playerId);
+  const actor = getPlayerOrThrow(room, playerId);
+
+  const isHostControllingLocal = room.mode === "local" && actor.isHost && targetPlayerId;
+  const player = isHostControllingLocal ? getPlayerOrThrow(room, targetPlayerId) : actor;
 
   if (player.isHost) {
     throw new Error("Host cannot buzz.");
@@ -644,11 +775,11 @@ export async function buzz(roomCode: string, playerId: string) {
   if (room.buzzedPlayerId) {
     throw new Error("A player already buzzed.");
   }
-  if (room.attemptedPlayerIds.includes(playerId)) {
+  if (room.attemptedPlayerIds.includes(player.id)) {
     throw new Error("You already tried this clue.");
   }
 
-  room.buzzedPlayerId = playerId;
+  room.buzzedPlayerId = player.id;
   room.phase = "judging";
   touchRoom(room);
   await saveRoom(room);
@@ -679,6 +810,12 @@ export async function judgeAnswer(roomCode: string, playerId: string, isCorrect:
   }
 
   const nextSelectorId = getNextSelectorId(room);
+
+  room.judgeEvent = {
+    id: generateId("judge"),
+    isCorrect,
+    judgedAt: now(),
+  };
 
   const buzzed = getPlayerOrThrow(room, room.buzzedPlayerId);
   const isSelectorAnswering = buzzed.id === room.selectorId;

@@ -1,4 +1,5 @@
 export type GamePhase = "lobby" | "board" | "clue" | "judging" | "final" | "finished";
+export type RoomMode = "online" | "local";
 
 export interface Clue {
   id: string;
@@ -48,6 +49,7 @@ export interface MatchHistoryEntry {
 
 export interface Room {
   code: string;
+  mode: RoomMode;
   phase: GamePhase;
   players: Player[];
   categories: Category[];
@@ -61,6 +63,16 @@ export interface Room {
   finalPrompt?: FinalPrompt;
   finalSubmissions: Record<string, FinalSubmission>;
   finalResolved: boolean;
+  timerEvent?: {
+    id: string;
+    startedAt: number;
+    durationMs: number;
+  };
+  judgeEvent?: {
+    id: string;
+    isCorrect: boolean;
+    judgedAt: number;
+  };
   eventVersion: number;
   createdAt: number;
   updatedAt: number;
@@ -68,6 +80,7 @@ export interface Room {
 
 export interface PublicRoomState {
   code: string;
+  mode: RoomMode;
   phase: GamePhase;
   players: Player[];
   categories: Array<{
@@ -100,6 +113,16 @@ export interface PublicRoomState {
       answer: string;
     };
     resolved: boolean;
+  };
+  timerEvent?: {
+    id: string;
+    startedAt: number;
+    durationMs: number;
+  };
+  judgeEvent?: {
+    id: string;
+    isCorrect: boolean;
+    judgedAt: number;
   };
   eventVersion: number;
 }
