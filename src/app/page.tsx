@@ -72,6 +72,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const roomNotFoundCount = useState(0);
   const loadedBoardsForRoomRef = useRef<string | null>(null);
+  const stablePlayerIdentityRef = useRef<{ playerId: string; name: string } | null>(null);
 
   useEffect(() => {
     const restoreSession = setTimeout(() => {
@@ -79,6 +80,7 @@ export default function Home() {
       if (!storedSession) {
         return;
       }
+      stablePlayerIdentityRef.current = { playerId: storedSession.playerId, name: storedSession.name };
       setSession(storedSession);
       setName(storedSession.name);
     }, 0);
@@ -89,6 +91,7 @@ export default function Home() {
   const clearSession = useCallback(() => {
     setSession(null);
     setRoom(null);
+    stablePlayerIdentityRef.current = null;
     localStorage.removeItem(STORAGE_KEY);
   }, []);
 
@@ -214,7 +217,17 @@ export default function Home() {
 
   const persistSession = useCallback((nextSession: Session) => {
     setSession(nextSession);
+    stablePlayerIdentityRef.current = { playerId: nextSession.playerId, name: nextSession.name };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(nextSession));
+  }, []);
+
+  const isCurrentSessionPlayer = useCallback((player: { id: string; name: string }) => {
+    const stableIdentity = stablePlayerIdentityRef.current;
+    if (!stableIdentity) {
+      return false;
+    }
+
+    return player.id === stableIdentity.playerId || player.name === stableIdentity.name;
   }, []);
 
   async function createRoom() {
@@ -477,7 +490,7 @@ export default function Home() {
                           key={p.id}
                           className="rounded-full border border-cyan-300/40 bg-cyan-400/10 px-3 py-1 text-sm text-cyan-100"
                         >
-                          {p.name}{p.id === session.playerId ? " (you)" : ""}
+                          {p.name}{isCurrentSessionPlayer(p) ? " (you)" : ""}
                         </span>
                       ))
                   )}
@@ -515,7 +528,7 @@ export default function Home() {
                                 ? "cursor-not-allowed border-slate-700 bg-slate-800 text-slate-500"
                                 : canSelectClue
                                   ? "border-cyan-400/50 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/20"
-                                  : "cursor-default border-cyan-400/35 bg-slate-900 text-cyan-200"
+                                  : "cursor-default border-amber-300/50 bg-amber-300/10 text-amber-100"
                             }`}
                             onClick={() => {
                               if (canSelectClue) {
