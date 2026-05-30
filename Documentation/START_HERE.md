@@ -27,23 +27,40 @@ cd /d C:\Users\Gian\Desktop\Coding\QuizWebsite\jeopardy-online
 - Im Browser: http://localhost:3000
 
 ## 6) Schneller Funktions-Check (2-3 Spieler)
+
+### A) Online-Modus
 1. Browser A: Host erstellt Room (Host spielt nicht mit)
-2. Browser B/C: Zwei Spieler joinen den Room
-3. Optional: Host importiert JSON-Fragenset in der Lobby oder wählt ein DB-Board aus
-4. Host startet Match
-5. Selector wählt Karte und beantwortet direkt mündlich (ohne Buzz als Erstversuch)
-6. Host bewertet korrekt/falsch
-7. Bei falsch: anderer Spieler kann buzzen (Steal) und mündlich antworten
-8. Wenn niemand buzzen will: Host klickt `Continue without buzz`
-9. Prüfen: Nächster Selector bleibt reihum
-10. Alle Fragen bis Match-Ende spielen
-11. Endscreen zeigt Podium + Rangliste
-12. Host klickt optional `New game (same lobby)` und alle landen wieder in derselben Lobby
+2. In Lobby bleibt Mode auf `Online`
+3. Browser B/C: Zwei Spieler joinen den Room
+4. Optional: Host importiert JSON-Fragenset in der Lobby oder wählt ein DB-Board aus
+5. Optional: Host kann ungewollte Spieler per `Kick` aus der Lobby entfernen
+6. Host startet Match
+7. Selector wählt Karte und beantwortet direkt mündlich (ohne Buzz als Erstversuch)
+8. Host bewertet korrekt/falsch
+9. Nur während ein Spieler antwortet (Host-Judging-Popup): Host kann `Start 10s Answer Timer` drücken
+10. Prüfen: Timer läuft 10s mit Sound und wird allen als Randbalken angezeigt
+11. Bei falsch: anderer Spieler kann buzzen (Steal) und mündlich antworten
+12. Wenn niemand buzzen will: Host klickt `Continue without buzz`
+13. Prüfen: Nächster Selector bleibt reihum
+14. Alle Fragen bis Match-Ende spielen
+15. Endscreen zeigt Podium + Rangliste
+16. Host klickt optional `New game (same lobby)` und alle landen wieder in derselben Lobby
+
+### B) Local-Modus (ein Gerät)
+1. Host erstellt Room
+2. In Lobby auf Mode `Local (one device)` wechseln
+3. Host fügt lokale Spieler per Name hinzu (`Add player`)
+4. Optional: lokale Spieler per `Remove` wieder entfernen
+5. Host startet Match
+6. Host steuert Spielfluss für alle Spieler auf demselben Gerät
+7. In offenen Buzz-Phasen nutzt Host die Local-Buzz-Auswahl
 
 UI-Hinweis:
 - Die aktive Frage erscheint als Popup/Modal.
 - Die aktive Frage kann minimiert und wieder geöffnet werden.
 - Die Spielerliste steht unter dem Board, inkl. Hervorhebung von Selector und aktiv antwortendem Spieler.
+- Oben im Screen erscheint bei laufendem Antwort-Timer ein globaler Fortschrittsbalken.
+- Mit dem `Sound`-Regler in der Room-Leiste kann die Lautstärke für Timer/Success/Fail zentral eingestellt werden.
 
 ## 7) Admin-Konsole (optional)
 - URL: http://localhost:3000/admin

@@ -76,6 +76,8 @@ export default function Home() {
   const loadedBoardsForRoomRef = useRef<string | null>(null);
   const stablePlayerIdentityRef = useRef<{ playerId: string; name: string } | null>(null);
   const [timerRemainingMs, setTimerRemainingMs] = useState(0);
+  const [timerDurationMs, setTimerDurationMs] = useState(10_000);
+  const [timerEndsAtMs, setTimerEndsAtMs] = useState<number | null>(null);
   const [soundVolume, setSoundVolume] = useState(70);
   const lastTimerEventIdRef = useRef<string | null>(null);
   const lastJudgeEventIdRef = useRef<string | null>(null);
@@ -213,6 +215,7 @@ export default function Home() {
   const showClueOverlay = Boolean(room?.activeClue && clueOverlayOpen);
   const ranking = contestants.slice().sort((a, b) => b.score - a.score);
   const podium = ranking.slice(0, 3);
+  const timerProgress = timerDurationMs > 0 ? Math.max(0, Math.min(1, timerRemainingMs / timerDurationMs)) : 0;
 
   const playJudgeSound = useCallback((isCorrect: boolean) => {
     if (typeof window === "undefined") {
@@ -277,37 +280,62 @@ export default function Home() {
       return;
     }
 
+    const drone = context.createOscillator();
+    const droneGain = context.createGain();
+    drone.type = "sawtooth";
+    drone.frequency.setValueAtTime(92, nowAt);
+    drone.frequency.exponentialRampToValueAtTime(72, nowAt + 10);
+    droneGain.gain.setValueAtTime(0.0001, nowAt);
+    droneGain.gain.linearRampToValueAtTime(0.045 * volume, nowAt + 0.3);
+    droneGain.gain.exponentialRampToValueAtTime(0.0001, nowAt + 10);
+    drone.connect(droneGain);
+    droneGain.connect(context.destination);
+    drone.start(nowAt);
+    drone.stop(nowAt + 10.1);
+
     for (let second = 0; second < 10; second += 1) {
       const beepAt = nowAt + second;
       const urgency = second / 9;
-      const frequency = 330 + urgency * 420;
+      const frequency = 220 + urgency * 620;
       const osc = context.createOscillator();
       const gain = context.createGain();
 
-      osc.type = "square";
+      osc.type = "triangle";
       osc.frequency.setValueAtTime(frequency, beepAt);
       gain.gain.setValueAtTime(0.0001, beepAt);
-      gain.gain.linearRampToValueAtTime((0.08 + urgency * 0.18) * volume, beepAt + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, beepAt + 0.16);
+      gain.gain.linearRampToValueAtTime((0.1 + urgency * 0.24) * volume, beepAt + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, beepAt + 0.19);
 
       osc.connect(gain);
       gain.connect(context.destination);
       osc.start(beepAt);
-      osc.stop(beepAt + 0.17);
+      osc.stop(beepAt + 0.2);
     }
 
     const finalAt = nowAt + 10;
-    const finalOsc = context.createOscillator();
-    const finalGain = context.createGain();
-    finalOsc.type = "triangle";
-    finalOsc.frequency.setValueAtTime(880, finalAt);
-    finalGain.gain.setValueAtTime(0.0001, finalAt);
-    finalGain.gain.linearRampToValueAtTime(0.28 * volume, finalAt + 0.03);
-    finalGain.gain.exponentialRampToValueAtTime(0.0001, finalAt + 0.45);
-    finalOsc.connect(finalGain);
-    finalGain.connect(context.destination);
-    finalOsc.start(finalAt);
-    finalOsc.stop(finalAt + 0.46);
+    const finalLow = context.createOscillator();
+    const finalLowGain = context.createGain();
+    finalLow.type = "square";
+    finalLow.frequency.setValueAtTime(146.83, finalAt);
+    finalLowGain.gain.setValueAtTime(0.0001, finalAt);
+    finalLowGain.gain.linearRampToValueAtTime(0.26 * volume, finalAt + 0.03);
+    finalLowGain.gain.exponentialRampToValueAtTime(0.0001, finalAt + 0.55);
+    finalLow.connect(finalLowGain);
+    finalLowGain.connect(context.destination);
+    finalLow.start(finalAt);
+    finalLow.stop(finalAt + 0.56);
+
+    const finalHigh = context.createOscillator();
+    const finalHighGain = context.createGain();
+    finalHigh.type = "triangle";
+    finalHigh.frequency.setValueAtTime(587.33, finalAt + 0.02);
+    finalHighGain.gain.setValueAtTime(0.0001, finalAt + 0.02);
+    finalHighGain.gain.linearRampToValueAtTime(0.18 * volume, finalAt + 0.06);
+    finalHighGain.gain.exponentialRampToValueAtTime(0.0001, finalAt + 0.5);
+    finalHigh.connect(finalHighGain);
+    finalHighGain.connect(context.destination);
+    finalHigh.start(finalAt + 0.02);
+    finalHigh.stop(finalAt + 0.52);
 
     setTimeout(() => {
       void context.close();
@@ -321,30 +349,36 @@ export default function Home() {
   }, [room?.activeClue?.id]);
 
   useEffect(() => {
-    if (!room?.timerEvent) {
+    if (timerEndsAtMs === null) {
       setTimerRemainingMs(0);
       return;
     }
 
-    const expiresAt = room.timerEvent.startedAt + room.timerEvent.durationMs;
     const updateRemaining = () => {
-      setTimerRemainingMs(Math.max(0, expiresAt - Date.now()));
+      const remaining = Math.max(0, timerEndsAtMs - Date.now());
+      setTimerRemainingMs(remaining);
+      if (remaining <= 0) {
+        setTimerEndsAtMs(null);
+      }
     };
 
     updateRemaining();
-    const timer = setInterval(updateRemaining, 100);
+    const timer = setInterval(updateRemaining, 50);
     return () => clearInterval(timer);
-  }, [room?.timerEvent?.id, room?.timerEvent?.startedAt, room?.timerEvent?.durationMs]);
+  }, [timerEndsAtMs]);
 
   useEffect(() => {
-    const eventId = room?.timerEvent?.id;
-    if (!eventId || lastTimerEventIdRef.current === eventId) {
+    const event = room?.timerEvent;
+    if (!event || lastTimerEventIdRef.current === event.id) {
       return;
     }
 
-    lastTimerEventIdRef.current = eventId;
+    lastTimerEventIdRef.current = event.id;
+    setTimerDurationMs(event.durationMs);
+    setTimerEndsAtMs(Date.now() + event.durationMs);
+    setTimerRemainingMs(event.durationMs);
     playTimerSequence();
-  }, [room?.timerEvent?.id, playTimerSequence]);
+  }, [room?.timerEvent, playTimerSequence]);
 
   useEffect(() => {
     const event = room?.judgeEvent;
@@ -518,6 +552,15 @@ export default function Home() {
 
   return (
     <div className="relative mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-8">
+      {timerRemainingMs > 0 && (
+        <div className="pointer-events-none fixed inset-x-0 top-0 z-[70] h-2 bg-slate-950/70">
+          <div
+            className="h-full origin-left bg-gradient-to-r from-fuchsia-400 via-rose-400 to-amber-300 transition-[transform] duration-75 ease-linear"
+            style={{ transform: `scaleX(${timerProgress})` }}
+          />
+        </div>
+      )}
+
       <header className="relative rounded-3xl border border-white/20 bg-slate-950/70 p-6 shadow-2xl backdrop-blur">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <h1 className="text-3xl font-bold tracking-tight text-cyan-300 sm:text-4xl">Jeopardy Online MVP</h1>
@@ -590,15 +633,6 @@ export default function Home() {
                   />
                   <span className="w-8 text-right text-cyan-200">{soundVolume}%</span>
                 </label>
-                {room.phase !== "lobby" && isHost && (
-                  <button
-                    className="rounded-xl border border-fuchsia-300/70 bg-fuchsia-400/15 px-4 py-2 text-sm font-semibold text-fuchsia-100 transition hover:bg-fuchsia-400/25 disabled:cursor-not-allowed disabled:border-slate-600 disabled:bg-slate-800 disabled:text-slate-500"
-                    onClick={() => void sendAction({ type: "triggerTimer" })}
-                    disabled={timerRemainingMs > 0}
-                  >
-                    {timerRemainingMs > 0 ? `Timer ${Math.ceil(timerRemainingMs / 1000)}s` : "Start 10s Timer"}
-                  </button>
-                )}
                 {room.phase === "lobby" && isHost && (
                   <label className="cursor-pointer rounded-xl border border-cyan-300/60 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-400/20">
                     {importingQuestions ? "Importing..." : "Import Questions JSON"}
@@ -789,11 +823,6 @@ export default function Home() {
 
           {room.phase !== "lobby" && room.phase !== "finished" && (
             <section className="overflow-hidden rounded-3xl border border-cyan-400/30 bg-slate-900/70 p-4 shadow-xl backdrop-blur">
-              {timerRemainingMs > 0 && (
-                <div className="mb-3 rounded-xl border border-fuchsia-300/50 bg-fuchsia-400/10 px-3 py-2 text-sm font-semibold text-fuchsia-100">
-                  10s Timer: {Math.ceil(timerRemainingMs / 1000)}
-                </div>
-              )}
               <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-cyan-200">
                 <span className="rounded-full border border-cyan-300/60 bg-cyan-400/10 px-3 py-1 font-semibold text-cyan-100">
                   Turn {turnPosition}/{Math.max(contestants.length, 1)}
@@ -999,6 +1028,18 @@ export default function Home() {
 
                 {room.phase === "judging" && isHost && (
                   <div className="mt-4 space-y-3 rounded-xl bg-slate-950/70 p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        className="rounded-xl border border-fuchsia-300/70 bg-fuchsia-400/15 px-4 py-2 text-sm font-semibold text-fuchsia-100 transition hover:bg-fuchsia-400/25 disabled:cursor-not-allowed disabled:border-slate-600 disabled:bg-slate-800 disabled:text-slate-500"
+                        onClick={() => void sendAction({ type: "triggerTimer" })}
+                        disabled={timerRemainingMs > 0}
+                      >
+                        {timerRemainingMs > 0 ? `Timer ${Math.ceil(timerRemainingMs / 1000)}s` : "Start 10s Answer Timer"}
+                      </button>
+                      {timerRemainingMs > 0 && (
+                        <span className="text-xs font-semibold uppercase tracking-wide text-fuchsia-200">Answer time running</span>
+                      )}
+                    </div>
                     <p className="text-xs text-amber-200">Expected answer: {room.activeClue.expectedAnswer}</p>
                     <div className="flex gap-2">
                       <button

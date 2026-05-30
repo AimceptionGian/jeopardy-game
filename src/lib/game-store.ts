@@ -684,8 +684,8 @@ export async function triggerRoomTimer(roomCode: string, playerId: string) {
     throw new Error("Only host can trigger timer.");
   }
 
-  if (room.phase === "lobby") {
-    throw new Error("Timer is only available during an active match.");
+  if (room.phase !== "judging") {
+    throw new Error("Timer is only available while a player is answering.");
   }
 
   room.timerEvent = {

@@ -6,6 +6,7 @@ Eine online spielbare Jeopardy-Webseite (React-basiert), die mit Freunden gehost
 Primäre Ziele:
 - Multiplayer mit Raumcode
 - Host-gesteuerte Bewertung
+- Online- und Local-Mode (Single Device)
 - Faire, serverseitige Scoring-Logik
 - Match-History
 - Wiederverwendbare Lobby für mehrere Matches
@@ -17,6 +18,9 @@ Primäre Ziele:
 - Persistenz: MongoDB Atlas
 - Realtime: Client-Polling (ca. 1.2s)
 - Zugang: Raumcode + Nickname, kein Pflicht-Login
+- Spielmodi:
+  - `online`: klassische Mehrgeraete-Raumrunde
+  - `local`: Host verwaltet Spieler und steuert das gesamte Match auf einem Geraet
 - Quiz-Import: JSON/CSV-Import-Endpoint vorhanden
 - Admin-Konsole: token-geschützte Admin-URL (`/admin`)
 
@@ -30,6 +34,8 @@ Warum so:
 Diese Regeln sind verbindlich im aktuellen Stand umgesetzt:
 
 - Der Host spielt nicht mit und ist nur Moderator/Judge.
+- In der Lobby kann der Host zwischen `online` und `local` wechseln.
+- Moduswechsel ist nur in der Lobby und nur vor dem Hinzufuegen von Spielern moeglich.
 - Der aktive Spieler (Selector) wählt ein Feld.
 - Der Selector beantwortet die gewählte Frage direkt (ohne Buzz als Erstversuch).
 - Antworten werden mündlich gegeben; es gibt kein Antwort-Textfeld im UI.
@@ -42,6 +48,9 @@ Diese Regeln sind verbindlich im aktuellen Stand umgesetzt:
   - Steal falsch: halber Kartenwert als Minus
 - Ein Spieler darf dieselbe Frage nur einmal versuchen.
 - Wenn niemand buzzern möchte, kann der Host `Continue without buzz` klicken.
+- Nur waehrend ein Spieler antwortet (Judging-Phase) kann der Host einen 10s Antwort-Timer ausloesen.
+- Der Timer wird allen als globaler Rand-Fortschrittsbalken angezeigt und blockiert keine Eingaben.
+- Timer-/Success-/Fail-Sounds sind vorhanden; Lautstaerke wird ueber einen globalen UI-Regler gesetzt.
 - Die Frage bleibt offen, bis entweder:
   - jemand korrekt antwortet, oder
   - alle berechtigten Spieler einen Versuch hatten, oder
@@ -55,11 +64,15 @@ Diese Regeln sind verbindlich im aktuellen Stand umgesetzt:
 ## 4) Was bereits implementiert ist
 ### Core Gameplay
 - Room erstellen/joinen
+- Room-Modus waehlen (`online`/`local`) in der Lobby
+- Host kann Lobby-Spieler entfernen (`Kick` in online, `Remove` in local)
 - Lobby + Start durch Host
 - Host als reiner Judge (kein Scoring/kein Turn)
 - Board mit auswählbaren Clues
 - Selector beantwortet direkt (verbal), danach Buzz-Steal (verbal) + Host-Judging
+- In Local-Mode kann Host stellvertretend fuer lokale Spieler bedienen (u. a. Buzz-Auswahl)
 - Host kann offene Buzz-Phasen manuell weiterziehen
+- Host kann im Judging-Popup einen 10s Antwort-Timer starten
 - Scoring gemäß obiger House Rules
 - Selector-Wechsel bei abgeschlossenen Fragen
 - Room kann nach Match-Ende wieder auf Lobby zurückgesetzt werden
@@ -70,6 +83,8 @@ Diese Regeln sind verbindlich im aktuellen Stand umgesetzt:
 - Aktuell antwortender Spieler visuell hervorgehoben
 - Aktive Frage erscheint als Popup/Modal
 - Aktive Frage kann minimiert und wieder geöffnet werden
+- Laufender Antwort-Timer als globaler Randbalken
+- Globaler Sound-Regler (Timer, korrekt, falsch)
 - Endscreen zeigt Podium + Rangliste
 
 ### Content / Boards
@@ -86,7 +101,7 @@ Diese Regeln sind verbindlich im aktuellen Stand umgesetzt:
 ## 5) Aktuelle technische Struktur
 ### Wichtige Module
 - `src/lib/types.ts`
-  - zentrale Typen für Room, PublicRoomState, History
+  - zentrale Typen fuer Room, PublicRoomState, History, Room-Mode, Timer/Judge-Events
 - `src/lib/game-store.ts`
   - MongoDB-backed State + komplette Game-Logik
 - `src/lib/admin-auth.ts`
@@ -109,11 +124,16 @@ Diese Regeln sind verbindlich im aktuellen Stand umgesetzt:
 - `reset`
 - `select`
 - `buzz`
+- `localBuzz`
 - `skipClue`
 - `submit`
 - `judge`
+- `triggerTimer`
 - `setCategories`
 - `setBoard`
+- `setMode`
+- `addLocalPlayer`
+- `removePlayer`
 
 Hinweis:
 - `finalSubmit` und `finalResolve` existieren noch als Altpfad, liefern aber nur noch einen Fehler, da Final Jeopardy deaktiviert ist.
@@ -152,14 +172,17 @@ Optional:
 Nach Start:
 - Zwei oder drei Browser/Profile öffnen
 - Ein Raum erstellen, weitere Spieler joinen
+- Optional: auf `Local` wechseln und lokale Spieler im Host-Client hinzufügen
 - In der Lobby:
   - JSON-Import testen
   - DB-Board-Auswahl testen
+  - Spieler-Kick/Remove testen
 - Match starten
 - Prüfen:
   - Selector falsch -> voller Abzug
   - Steal richtig -> halber Gewinn
   - Steal falsch -> halber Abzug
+  - Host-Timer im Judging-Popup -> 10s Sound + globaler Randbalken
   - Niemand buzzert -> Host klickt `Continue without buzz`
 - Alle Clues spielen bis Match-Ende
 - Podium und Rangliste prüfen

@@ -4,7 +4,12 @@ Online Jeopardy game built with Next.js App Router and MongoDB Atlas.
 
 Current product shape:
 - Host is moderator only and does not play.
+- Lobby supports `online` mode and `local` mode (single-device play controlled by host).
 - Players answer verbally; host judges correct/wrong.
+- Host can remove/kick players in the lobby.
+- During active answers, host can trigger a 10s answer timer from the question popup.
+- Timer is shown to all players as a screen-edge progress bar and includes dramatic countdown audio.
+- Global sound volume slider controls timer, success, and fail sounds.
 - No Final Jeopardy round.
 - Finished matches show a podium and full ranking.
 - The same room can be reset back to the lobby for a new match.
@@ -51,6 +56,11 @@ Current admin capabilities:
 - view match history
 - delete individual history entries
 - clear all history
+
+## Gameplay Modes
+
+- `Online`: players join with room code on their own devices.
+- `Local`: host adds players in lobby and runs the full game from one device.
 
 ## Current MVP Note
 
