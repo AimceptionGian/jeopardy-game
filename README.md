@@ -14,6 +14,7 @@ Current product shape:
 - Finished matches show a podium and full ranking.
 - The same room can be reset back to the lobby for a new match.
 - Boards can be imported from JSON or selected from the DB in the lobby.
+- DB board selection in lobby now normalizes legacy board data (for example missing IDs/string values) before applying.
 - An admin console can upload boards to the DB and manage match history.
 
 ## Local Quickstart

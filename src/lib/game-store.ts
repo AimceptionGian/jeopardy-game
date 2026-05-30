@@ -154,6 +154,51 @@ function validateCategories(categories: Category[]) {
   }
 }
 
+function normalizeBoardCategories(categories: Category[]): Category[] {
+  if (!Array.isArray(categories) || categories.length === 0) {
+    throw new Error("No categories found.");
+  }
+
+  return categories.map((category, categoryIndex) => {
+    const title = typeof category.title === "string" ? category.title.trim() : "";
+    const categoryId = typeof category.id === "string" && category.id.trim() ? category.id : generateId("cat");
+
+    if (!title) {
+      throw new Error(`Invalid category title at position ${categoryIndex + 1}.`);
+    }
+
+    if (!Array.isArray(category.clues) || category.clues.length === 0) {
+      throw new Error(`Category \"${title}\" has no clues.`);
+    }
+
+    const clues = category.clues.map((clue, clueIndex) => {
+      const question = typeof clue.question === "string" ? clue.question.trim() : "";
+      const answer = typeof clue.answer === "string" ? clue.answer.trim() : "";
+      const value = Number(clue.value);
+      const clueId = typeof clue.id === "string" && clue.id.trim() ? clue.id : generateId("clue");
+
+      if (!Number.isFinite(value) || !question || !answer) {
+        throw new Error(
+          `Invalid clue in category \"${title}\" at position ${clueIndex + 1}.`,
+        );
+      }
+
+      return {
+        id: clueId,
+        value,
+        question,
+        answer,
+      };
+    });
+
+    return {
+      id: categoryId,
+      title,
+      clues,
+    };
+  });
+}
+
 function findClue(room: Room, clueId?: string) {
   if (!clueId) {
     return undefined;
@@ -663,8 +708,9 @@ export async function setRoomBoard(roomCode: string, playerId: string, boardId: 
     throw new Error("Selected board was not found.");
   }
 
-  validateCategories(board.categories);
-  room.categories = cloneCategories(board.categories);
+  const normalizedCategories = normalizeBoardCategories(board.categories);
+  validateCategories(normalizedCategories);
+  room.categories = cloneCategories(normalizedCategories);
   room.usedClueIds = [];
   clearActiveClue(room);
   room.finalPrompt = undefined;

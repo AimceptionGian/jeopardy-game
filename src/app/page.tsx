@@ -519,6 +519,11 @@ export default function Home() {
         body: JSON.stringify({ ...payload, playerId: session.playerId }),
       });
       await pollRoom();
+
+      if (payload.type === "setBoard" && payload.boardId) {
+        const selected = boardLibrary.find((board) => board.id === payload.boardId);
+        setMessage(selected ? `Board applied: ${selected.name}` : "Board applied.");
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Action failed.");
     } finally {

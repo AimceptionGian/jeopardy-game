@@ -90,6 +90,7 @@ Diese Regeln sind verbindlich im aktuellen Stand umgesetzt:
 ### Content / Boards
 - Host kann in der Lobby JSON hochladen
 - Host kann in der Lobby ein gespeichertes DB-Board auswählen
+- Beim Anwenden eines DB-Boards werden Legacy-Daten vorab normalisiert (z. B. fehlende IDs oder numerische Strings), damit gespeicherte Alt-Boards stabil geladen werden
 - Admin-Konsole kann Boards als JSON in die DB laden und wieder löschen
 
 ### Match-History / Admin
