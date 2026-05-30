@@ -7,24 +7,26 @@ Primäre Ziele:
 - Multiplayer mit Raumcode
 - Host-gesteuerte Bewertung
 - Faire, serverseitige Scoring-Logik
-- Final Jeopardy Runde
 - Match-History
+- Wiederverwendbare Lobby für mehrere Matches
+- Board-Verwaltung über Admin-Konsole
 
-## 2) Produkt- und Architekturentscheidungen (Planung)
-Diese Entscheidungen wurden getroffen:
+## 2) Produkt- und Architekturentscheidungen (aktuell)
 - Frontend: React + Next.js App Router (TypeScript)
-- Backend: Next.js API Routes (kein separates Backend-Projekt)
-- Persistenz aktuell: In-Memory Store (MVP/prototypisch)
-- Realtime aktuell: Polling vom Client (ca. 1.2s)
+- Backend: Next.js API Routes
+- Persistenz: MongoDB Atlas
+- Realtime: Client-Polling (ca. 1.2s)
 - Zugang: Raumcode + Nickname, kein Pflicht-Login
 - Quiz-Import: JSON/CSV-Import-Endpoint vorhanden
+- Admin-Konsole: token-geschützte Admin-URL (`/admin`)
 
 Warum so:
-- Schnell deploybar (Vercel-kompatibel)
+- Schnell deploybar auf Vercel
+- Durable State auf Serverless-Infrastruktur
 - Einfache Iteration des Game-Loops
-- Fokus auf spielbare MVP-Funktion statt initialer Infrastrukturkomplexität
+- Boards und History können ohne Code-Änderung gepflegt werden
 
-## 3) Vereinbarte Spielregeln (Custom House Rules)
+## 3) Vereinbarte Spielregeln (aktueller Stand)
 Diese Regeln sind verbindlich im aktuellen Stand umgesetzt:
 
 - Der Host spielt nicht mit und ist nur Moderator/Judge.
@@ -39,11 +41,16 @@ Diese Regeln sind verbindlich im aktuellen Stand umgesetzt:
   - Steal korrekt: halber Kartenwert als Plus
   - Steal falsch: halber Kartenwert als Minus
 - Ein Spieler darf dieselbe Frage nur einmal versuchen.
+- Wenn niemand buzzern möchte, kann der Host `Continue without buzz` klicken.
 - Die Frage bleibt offen, bis entweder:
   - jemand korrekt antwortet, oder
-  - alle berechtigten Spieler einen Versuch hatten
-- Die Auswahlreihenfolge der Spieler ist strikt reihum (Join-Reihenfolge) und geht nach jeder abgeschlossenen Frage zum nächsten Spieler weiter.
-- Steals unterbrechen die Reihenfolge nicht (korrekter Steal gibt Punkte, aber nicht den nächsten Selector-Zug).
+  - alle berechtigten Spieler einen Versuch hatten, oder
+  - der Host die Frage ohne Buzz weiterzieht
+- Die Auswahlreihenfolge der Spieler ist strikt reihum (Join-Reihenfolge).
+- Steals unterbrechen die Reihenfolge nicht.
+- Es gibt **keine Final-Jeopardy-Runde**.
+- Nach der letzten normalen Frage endet das Match direkt mit Podium + Rangliste.
+- Der Host kann danach `New game (same lobby)` starten, wodurch alle Spieler in dieselbe Lobby zurückkehren.
 
 ## 4) Was bereits implementiert ist
 ### Core Gameplay
@@ -52,65 +59,142 @@ Diese Regeln sind verbindlich im aktuellen Stand umgesetzt:
 - Host als reiner Judge (kein Scoring/kein Turn)
 - Board mit auswählbaren Clues
 - Selector beantwortet direkt (verbal), danach Buzz-Steal (verbal) + Host-Judging
+- Host kann offene Buzz-Phasen manuell weiterziehen
 - Scoring gemäß obiger House Rules
-- Selector-Wechsel bei korrekter Antwort
+- Selector-Wechsel bei abgeschlossenen Fragen
+- Room kann nach Match-Ende wieder auf Lobby zurückgesetzt werden
 
-### UX / Layout (aktualisiert)
-- Spielerliste wird unter dem Board angezeigt
-- Aktueller Selector wird visuell hervorgehoben
-- Aktuell antwortender Spieler wird visuell hervorgehoben
-- Aktive Frage erscheint als Popup/Modal statt unter dem Board (kein Scrollen nötig)
+### UX / Layout
+- Spielerliste unter dem Board
+- Aktueller Selector visuell hervorgehoben
+- Aktuell antwortender Spieler visuell hervorgehoben
+- Aktive Frage erscheint als Popup/Modal
+- Aktive Frage kann minimiert und wieder geöffnet werden
+- Endscreen zeigt Podium + Rangliste
 
-### Final Jeopardy
-- Nach Verbrauch aller Clues Übergang in `final`
-- Jeder Spieler submittet genau einmal: Wager + Answer
-- Host kann final nur auflösen, wenn alle submitted haben
-- Finale Auswertung und Übergang in `finished`
+### Content / Boards
+- Host kann in der Lobby JSON hochladen
+- Host kann in der Lobby ein gespeichertes DB-Board auswählen
+- Admin-Konsole kann Boards als JSON in die DB laden und wieder löschen
 
-### Match-History
-- In-Memory History-Liste vorhanden
-- API-Endpoint für History vorhanden
-- Anzeige im UI vorhanden
-
-### Content Import
-- Endpoint für JSON/CSV-Import vorhanden
-- Grundvalidierung für Kategorien/Clues vorhanden
-- Host kann in der Lobby vor Match-Start ein JSON-Fragenset importieren
-- Der Import ersetzt das aktuelle Board im Room (nur vor Start erlaubt)
+### Match-History / Admin
+- Match-History wird in MongoDB gespeichert
+- Admin-Konsole kann History anzeigen
+- Einzelne History-Einträge können gelöscht werden
+- Gesamte History kann gelöscht werden
 
 ## 5) Aktuelle technische Struktur
 ### Wichtige Module
 - `src/lib/types.ts`
-  - zentrale Typen für Room, PublicRoomState, Final-Daten, History
+  - zentrale Typen für Room, PublicRoomState, History
 - `src/lib/game-store.ts`
-  - In-Memory State + komplette Game-Logik
+  - MongoDB-backed State + komplette Game-Logik
+- `src/lib/admin-auth.ts`
+  - Token-Schutz für Admin-APIs
 - `src/app/api/rooms/*`
   - Room-API (create, join, state, actions)
-- `src/app/api/history/route.ts`
-  - History-API
 - `src/app/api/questions/import/route.ts`
   - JSON/CSV Import
+- `src/app/api/boards/route.ts`
+  - öffentliche Board-Liste für Host-Lobby
+- `src/app/api/admin/*`
+  - Admin-APIs für Boards und History
 - `src/app/page.tsx`
-  - UI für Lobby, Board, Clue, Judging, Final, History
+  - Haupt-UI für Lobby, Board, Clue, Judging und Endscreen
+- `src/app/admin/page.tsx`
+  - Admin-Oberfläche
 
 ### API-Actions (room actions)
 - `start`
+- `reset`
 - `select`
 - `buzz`
+- `skipClue`
 - `submit`
 - `judge`
-- `finalSubmit`
-- `finalResolve`
+- `setCategories`
+- `setBoard`
 
-## 6) Bekannte Einschränkungen / offene Punkte
-- Persistenz ist noch In-Memory:
-  - Prozess-Neustart verliert Rooms/History
+Hinweis:
+- `finalSubmit` und `finalResolve` existieren noch als Altpfad, liefern aber nur noch einen Fehler, da Final Jeopardy deaktiviert ist.
+
+## 6) Persistenz / Datenmodell
+- MongoDB Atlas wird für Rooms, Board-Library und Match-History genutzt
+- Inaktive Rooms werden über TTL nach 2 Stunden gelöscht
+- Match-History ist auf 50 Einträge begrenzt
+- Board-Library ist persistent, bis sie im Adminbereich gelöscht wird
+
+## 7) Bekannte Einschränkungen / offene Punkte
 - Realtime ist Polling, kein WebSocket
-- Rejoin/Disconnect-Handling nur basic
-- Final-Antwortmatching ist aktuell einfach (string-basierter Vergleich)
-- Keine Auth/Profil/Leaderboard-Features
+- Rejoin/Disconnect-Handling ist brauchbar, aber nicht voll ausgebaut
+- Einmaliges Board-Auto-Loading in der Lobby ist bewusst begrenzt, um UI-Flackern zu vermeiden
+- Öffentliche Board-Liste ist nicht admin-geschützt, aber nur lesend und für Host-Lobby gedacht
+- Alt-Final-Typen können später komplett aus `types.ts` entfernt werden, falls gewünscht
 
-## 7) Wichtige Entwicklungs-Historie (Windows Setup Problem)
+## 8) Startanleitung lokal
+Im Projektordner:
+
+```cmd
+cd /d C:\Users\Gian\Desktop\Coding\QuizWebsite\jeopardy-online
+"C:\Program Files\nodejs\npm.cmd" install --prefer-offline --no-audit --no-fund
+copy .env.local.example .env.local
+"C:\Program Files\nodejs\npm.cmd" run dev
+```
+
+Pflicht in `.env.local`:
+- `MONGODB_URI`
+- `MONGODB_DB`
+
+Optional:
+- `ADMIN_TOKEN`
+
+## 9) Verifikation (Smoke Tests)
+Nach Start:
+- Zwei oder drei Browser/Profile öffnen
+- Ein Raum erstellen, weitere Spieler joinen
+- In der Lobby:
+  - JSON-Import testen
+  - DB-Board-Auswahl testen
+- Match starten
+- Prüfen:
+  - Selector falsch -> voller Abzug
+  - Steal richtig -> halber Gewinn
+  - Steal falsch -> halber Abzug
+  - Niemand buzzert -> Host klickt `Continue without buzz`
+- Alle Clues spielen bis Match-Ende
+- Podium und Rangliste prüfen
+- `New game (same lobby)` testen
+- `/admin` öffnen und Boards/History prüfen
+
+## 10) Deployment / Betrieb
+- Bevorzugt auf Vercel
+- Erforderliche Env Vars in Vercel:
+  - `MONGODB_URI`
+  - `MONGODB_DB`
+  - optional `ADMIN_TOKEN`
+
+## 11) Priorisierte Next Steps
+1. Board-Library weiter ausbauen
+- DB-Boards in Admin auch ansehen/downloaden
+- Board-Namen umbenennen können
+
+2. Typen aufräumen
+- Nicht mehr verwendete Final-Typen und Felder konsequent entfernen
+
+3. Realtime verbessern
+- Von Polling auf WebSocket/SSE migrieren
+
+4. QA und Tests
+- Unit-Tests für Scoring/State-Machine
+- Integrationstests für komplette Match-Flows
+
+## 12) Hinweise für die nächste KI
+- `game-store.ts` ist die zentrale State-Maschine; Änderungen dort wirken fast überall
+- Bei Lobby-/Polling-Bugs zuerst auf wiederholte Effects oder speichernde Reads in `page.tsx` schauen
+- Admin-API ist über `ADMIN_TOKEN` geschützt; für neue Admin-Features dort anknüpfen
+- House Rules nicht in Standard-Jeopardy zurückdrehen; der aktuelle Ablauf ist bewusst custom
+
+## 13) Wichtige Entwicklungs-Historie (Windows Setup Problem)
 Im alten Workspace gab es massive Probleme mit beschädigtem `node_modules` unter Windows:
 - unvollständige Pakete (z. B. `next` ohne `package.json`)
 - fehlende `.bin` Shims
@@ -121,74 +205,3 @@ Lösungspfad:
 - Neues Projekt auf C-Laufwerk in frischem Ordner
 - Altlasten (`node_modules`, `.next`) nicht mitkopieren
 - Installation über explizites `npm.cmd`
-
-## 8) Startanleitung im neuen Workspace
-Im neuen Ordner ausführen:
-
-```cmd
-cd /d C:\Users\Gian\Desktop\Coding\QuizWebsite\jeopardy-online
-"C:\Program Files\nodejs\npm.cmd" install --prefer-offline --no-audit --no-fund
-"C:\Program Files\nodejs\npm.cmd" run dev
-```
-
-Wenn PowerShell genutzt wird und `npm` blockiert ist:
-- weiter über `npm.cmd` mit absolutem Pfad arbeiten
-
-## 9) Verifikation (Smoke Tests)
-Nach Start:
-- Zwei Browser/Profiles öffnen
-- Ein Raum erstellen, zweiter Spieler joint
-- Match starten
-- Prüfen:
-  - Selector falsch -> voller Abzug
-  - Steal richtig -> halber Gewinn
-  - Steal falsch -> halber Abzug
-- Alle Clues spielen bis Final
-- Alle Spieler submitten Final
-- Host resolved Final
-- Match in History sichtbar
-
-## 10) Priorisierte Next Steps für die nächste KI
-1. Stabilisierung Laufzeit/Install
-- Sicherstellen, dass `package-lock.json` sauber erzeugt ist
-- `npm ci` als Standard für reproduzierbare lokale Setups
-
-2. Persistenz auf echte DB umstellen (Supabase/Postgres)
-- Rooms, players, score events, history persistieren
-- Rejoin-Tokens/Sessions sauber modellieren
-
-3. Realtime verbessern
-- Von Polling auf WebSocket/SSE migrieren
-- Serverseitige Event-Reihenfolge klar versionieren
-
-4. Rejoin-Robustheit
-- Disconnect-Fenster + State-Recovery
-- Idempotente Action-Verarbeitung
-
-5. QA und Tests
-- Unit-Tests für Scoring/State-Machine
-- Integrationstests für komplette Match-Flows
-
-## 11) Definition of Done für "MVP online mit Freunden"
-- Öffentliche URL erreichbar
-- 2-6 Spieler können eine Runde komplett spielen
-- House Rules korrekt umgesetzt
-- Final Jeopardy inkl. Auswertung funktioniert
-- Match-History nach Spielende einsehbar
-- Keine kritischen Abstürze im Normalfluss
-
-## 12) Hinweise für die nächste KI
-- Zuerst Installationsintegrität prüfen:
-  - `node_modules/next/package.json`
-  - `node_modules/.bin/next.cmd`
-  - `package-lock.json`
-- Bei ungewöhnlichem Installverhalten nicht endlos abbrechen/restarten, sondern:
-  - Logs aus `C:\Users\Gian\AppData\Local\npm-cache\_logs` auswerten
-  - Danach gezielt korrigieren
-- Spielregeln nicht "Jeopardy-standard" zurückdrehen: House Rules sind gewollt.
-
----
-Status beim Erstellen dieser Dokumentation:
-- Planung + Kernimplementierung vorhanden
-- Setup auf neuem C-Workspace vorbereitet
-- Nächster Fokus: stabile Dependency-Installation und danach Smoke-Test

@@ -25,26 +25,45 @@ git push
 4. Framework: Next.js (wird automatisch erkannt)
 5. "Deploy" klicken
 
-## 4) Nach Deploy testen
-- Homepage oeffnen
+## 4) Environment Variables in Vercel setzen
+Pflicht:
+- `MONGODB_URI`
+- `MONGODB_DB=jeopardy-online`
+
+Optional für Admin-Features:
+- `ADMIN_TOKEN`
+
+Danach neu deployen.
+
+## 5) Nach Deploy testen
+- Homepage öffnen
 - Room erstellen
 - Zwei Spieler joinen
 - Eine kurze Runde spielen
 - JSON-Import in Lobby testen
+- DB-Board-Auswahl in Lobby testen
+- Endscreen mit Podium/Rangliste testen
+- `New game (same lobby)` testen
+
+## 6) Admin testen (optional)
+- `/admin` öffnen
+- Admin-Token eingeben
+- Board-JSON hochladen
+- Match-History ansehen
+- Einzelnen History-Eintrag löschen
 
 ## Wichtiger Hinweis zum aktuellen MVP
-Aktuell werden Rooms und Match-History **in-memory** gespeichert.
+Rooms, Board-Library und Match-History werden in **MongoDB Atlas** gespeichert.
 
-Das bedeutet auf Cloud/Serverless:
-- Daten gehen bei Neustarts/Cold Starts verloren
-- Mehrere Instanzen teilen den Zustand nicht verlässlich
+Zusatz:
+- Inaktive Rooms werden nach 2 Stunden automatisch über TTL gelöscht.
+- Aktive Rooms bleiben durch laufende Poll-Updates erhalten.
 
-Fuer echte stabile Online-Runden als naechster Schritt:
-1. Persistenz auf DB (z. B. Supabase Postgres) umstellen
-2. Optional Realtime-Kanal (SSE/WebSocket) ergänzen
+Bekannte Architekturgrenze:
+- Realtime läuft aktuell über Polling, nicht über WebSockets.
 
 ## Kostenlose Alternativen (optional)
 - Netlify Free
 - Cloudflare Pages Free
 
-Beide sind moeglich, aber fuer Next.js ist Vercel meist am unkompliziertesten.
+Beide sind möglich, aber für Next.js ist Vercel meist am unkompliziertesten.
