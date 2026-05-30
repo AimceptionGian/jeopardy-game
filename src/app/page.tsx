@@ -85,6 +85,12 @@ export default function Home() {
     return () => clearTimeout(restoreSession);
   }, []);
 
+  const clearSession = useCallback(() => {
+    setSession(null);
+    setRoom(null);
+    localStorage.removeItem(STORAGE_KEY);
+  }, []);
+
   const pollRoom = useCallback(async () => {
     if (!session) {
       return;
@@ -188,12 +194,6 @@ export default function Home() {
   const persistSession = useCallback((nextSession: Session) => {
     setSession(nextSession);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(nextSession));
-  }, []);
-
-  const clearSession = useCallback(() => {
-    setSession(null);
-    setRoom(null);
-    localStorage.removeItem(STORAGE_KEY);
   }, []);
 
   async function createRoom() {
