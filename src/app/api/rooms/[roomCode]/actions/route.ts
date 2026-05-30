@@ -4,6 +4,7 @@ import {
   resolveFinal,
   selectClue,
   setRoomCategories,
+  skipClue,
   startGame,
   submitFinal,
   submitAnswer,
@@ -11,7 +12,16 @@ import {
 import type { Category } from "@/lib/types";
 import { NextResponse } from "next/server";
 
-type ActionType = "start" | "select" | "buzz" | "submit" | "judge" | "finalSubmit" | "finalResolve" | "setCategories";
+type ActionType =
+  | "start"
+  | "select"
+  | "buzz"
+  | "skipClue"
+  | "submit"
+  | "judge"
+  | "finalSubmit"
+  | "finalResolve"
+  | "setCategories";
 
 interface ActionBody {
   type?: ActionType;
@@ -48,6 +58,9 @@ export async function POST(
         break;
       case "buzz":
         await buzz(roomCode, playerId);
+        break;
+      case "skipClue":
+        await skipClue(roomCode, playerId);
         break;
       case "submit":
         submitAnswer(roomCode, playerId, body.answer ?? "");

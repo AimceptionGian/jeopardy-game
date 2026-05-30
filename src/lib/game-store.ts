@@ -90,11 +90,6 @@ async function saveHistory(entries: MatchHistoryEntry[]): Promise<void> {
   );
 }
 
-const FINAL_PROMPT = {
-  question: "Name the web protocol used for secure communication over the internet.",
-  answer: "https",
-};
-
 function now() {
   return Date.now();
 }
@@ -197,23 +192,24 @@ function touchRoom(room: Room) {
   room.updatedAt = now();
 }
 
-function isAnswerMatch(actual: string, expected: string) {
-  return actual.trim().toLowerCase() === expected.trim().toLowerCase();
-}
-
 function allCluesUsed(room: Room) {
   return room.usedClueIds.length === room.categories.reduce((count, category) => count + category.clues.length, 0);
 }
 
-function enterFinalRound(room: Room) {
-  room.phase = "final";
+function clearActiveClue(room: Room) {
   room.activeClueId = undefined;
   room.buzzedPlayerId = undefined;
   room.submittedAnswer = undefined;
   room.attemptedPlayerIds = [];
-  room.finalPrompt = { ...FINAL_PROMPT };
+}
+
+async function finishMatch(room: Room) {
+  room.phase = "finished";
+  clearActiveClue(room);
+  room.finalPrompt = undefined;
   room.finalSubmissions = {};
   room.finalResolved = false;
+  await pushHistory(room);
 }
 
 async function pushHistory(room: Room): Promise<void> {
@@ -460,6 +456,37 @@ export async function selectClue(roomCode: string, playerId: string, clueId: str
   await saveRoom(room);
 }
 
+export async function skipClue(roomCode: string, playerId: string) {
+  const room = await getRoomOrThrow(roomCode);
+  const player = getPlayerOrThrow(room, playerId);
+
+  if (!player.isHost) {
+    throw new Error("Only host can skip a clue.");
+  }
+
+  if (room.phase !== "clue") {
+    throw new Error("Skip is only available during the open buzz phase.");
+  }
+
+  const clue = findClue(room, room.activeClueId);
+  if (!clue) {
+    throw new Error("No active clue to skip.");
+  }
+
+  room.selectorId = getNextSelectorId(room);
+  room.usedClueIds.push(clue.id);
+  clearActiveClue(room);
+
+  if (allCluesUsed(room)) {
+    await finishMatch(room);
+  } else {
+    room.phase = "board";
+  }
+
+  touchRoom(room);
+  await saveRoom(room);
+}
+
 export async function buzz(roomCode: string, playerId: string) {
   const room = await getRoomOrThrow(roomCode);
   const player = getPlayerOrThrow(room, playerId);
@@ -523,12 +550,10 @@ export async function judgeAnswer(roomCode: string, playerId: string, isCorrect:
   if (isCorrect) {
     room.selectorId = nextSelectorId;
     room.usedClueIds.push(clue.id);
-    room.activeClueId = undefined;
-    room.buzzedPlayerId = undefined;
-    room.submittedAnswer = undefined;
+    clearActiveClue(room);
 
     if (allCluesUsed(room)) {
-      enterFinalRound(room);
+      await finishMatch(room);
     } else {
       room.phase = "board";
     }
@@ -549,10 +574,11 @@ export async function judgeAnswer(roomCode: string, playerId: string, isCorrect:
   if (remainingBuzzers.length === 0) {
     room.selectorId = nextSelectorId;
     room.usedClueIds.push(clue.id);
-    room.activeClueId = undefined;
-    room.phase = allCluesUsed(room) ? "final" : "board";
-    if (room.phase === "final") {
-      enterFinalRound(room);
+    clearActiveClue(room);
+    if (allCluesUsed(room)) {
+      await finishMatch(room);
+    } else {
+      room.phase = "board";
     }
   } else {
     room.phase = "clue";
@@ -562,82 +588,15 @@ export async function judgeAnswer(roomCode: string, playerId: string, isCorrect:
 }
 
 export async function submitFinal(roomCode: string, playerId: string, wager: number, answer: string) {
-  const room = await getRoomOrThrow(roomCode);
-  const player = getPlayerOrThrow(room, playerId);
-  const contestants = getContestants(room);
-
-  if (room.phase !== "final" || !room.finalPrompt) {
-    throw new Error("Final Jeopardy is not active.");
-  }
-
-  if (room.finalResolved) {
-    throw new Error("Final Jeopardy is already resolved.");
-  }
-
-  if (player.isHost || !contestants.some((entry) => entry.id === player.id)) {
-    throw new Error("Host does not submit Final Jeopardy.");
-  }
-
-  if (room.finalSubmissions[player.id]) {
-    throw new Error("You already submitted Final Jeopardy.");
-  }
-
-  if (!answer.trim()) {
-    throw new Error("Final answer must not be empty.");
-  }
-
-  const safeWager = Math.floor(wager);
-  if (Number.isNaN(safeWager) || safeWager < 0) {
-    throw new Error("Wager must be a positive number.");
-  }
-
-  const maxWager = Math.max(0, player.score);
-  if (safeWager > maxWager) {
-    throw new Error(`Wager cannot exceed your score (${maxWager}).`);
-  }
-
-  room.finalSubmissions[player.id] = {
-    wager: safeWager,
-    answer: answer.trim(),
-    submittedAt: now(),
-  };
-  touchRoom(room);
-  await saveRoom(room);
+  void roomCode;
+  void playerId;
+  void wager;
+  void answer;
+  throw new Error("Final Jeopardy is disabled for this game mode.");
 }
 
 export async function resolveFinal(roomCode: string, playerId: string) {
-  const room = await getRoomOrThrow(roomCode);
-  const player = getPlayerOrThrow(room, playerId);
-  const contestants = getContestants(room);
-
-  if (!player.isHost) {
-    throw new Error("Only host can resolve Final Jeopardy.");
-  }
-
-  if (room.phase !== "final" || !room.finalPrompt) {
-    throw new Error("Final Jeopardy is not active.");
-  }
-
-  if (room.finalResolved) {
-    throw new Error("Final Jeopardy already resolved.");
-  }
-
-  if (Object.keys(room.finalSubmissions).length !== contestants.length) {
-    throw new Error("All players must submit final wager and answer first.");
-  }
-
-  for (const playerEntry of contestants) {
-    const submission = room.finalSubmissions[playerEntry.id];
-    if (!submission) {
-      continue;
-    }
-    const correct = isAnswerMatch(submission.answer, room.finalPrompt.answer);
-    playerEntry.score += correct ? submission.wager : -submission.wager;
-  }
-
-  room.finalResolved = true;
-  room.phase = "finished";
-  await pushHistory(room);
-  touchRoom(room);
-  await saveRoom(room);
+  void roomCode;
+  void playerId;
+  throw new Error("Final Jeopardy is disabled for this game mode.");
 }

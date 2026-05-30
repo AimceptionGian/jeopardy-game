@@ -54,8 +54,6 @@ export default function Home() {
   const [joinCode, setJoinCode] = useState("");
   const [session, setSession] = useState<Session | null>(null);
   const [room, setRoom] = useState<PublicRoomState | null>(null);
-  const [finalWager, setFinalWager] = useState("0");
-  const [finalAnswer, setFinalAnswer] = useState("");
   const [history, setHistory] = useState<MatchHistoryEntry[]>([]);
   const [historyMenuOpen, setHistoryMenuOpen] = useState(false);
   const [importingQuestions, setImportingQuestions] = useState(false);
@@ -178,10 +176,6 @@ export default function Home() {
   const selectorIndex = contestants.findIndex((player) => player.id === room?.selectorId);
   const selectorName = contestants.find((player) => player.id === room?.selectorId)?.name ?? "Unknown";
   const turnPosition = selectorIndex >= 0 ? selectorIndex + 1 : 0;
-  const final = room?.final;
-  const selfFinal = final?.selfSubmission;
-  const finalSubmitted = Boolean(selfFinal);
-  const allFinalSubmitted = Boolean(final && final.submissionCount === contestants.length);
   const canBuzz = Boolean(
     room?.phase === "clue" &&
       room.activeClue &&
@@ -192,6 +186,8 @@ export default function Home() {
   );
   const isBuzzed = Boolean(room && session && room.activeClue?.buzzedPlayerId === session.playerId);
   const showClueOverlay = Boolean(room?.activeClue && clueOverlayOpen);
+  const ranking = contestants.slice().sort((a, b) => b.score - a.score);
+  const podium = ranking.slice(0, 3);
 
   useEffect(() => {
     if (room?.activeClue) {
@@ -249,7 +245,7 @@ export default function Home() {
   }
 
   async function sendAction(payload: {
-    type: "start" | "select" | "buzz" | "submit" | "judge" | "finalSubmit" | "finalResolve" | "setCategories";
+    type: "start" | "select" | "buzz" | "skipClue" | "submit" | "judge" | "finalSubmit" | "finalResolve" | "setCategories";
     clueId?: string;
     answer?: string;
     isCorrect?: boolean;
@@ -357,7 +353,7 @@ export default function Home() {
               placeholder="Your name"
             />
             <button
-              className="w-full rounded-xl bg-cyan-400 px-4 py-2 font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:opacity-60"
+              className="w-full rounded-xl bg-cyan-400 px-4 py-2 font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
               onClick={createRoom}
               disabled={loading}
             >
@@ -374,7 +370,7 @@ export default function Home() {
               placeholder="ABC123"
             />
             <button
-              className="w-full rounded-xl bg-amber-300 px-4 py-2 font-semibold text-slate-950 transition hover:bg-amber-200 disabled:opacity-60"
+              className="w-full rounded-xl bg-amber-300 px-4 py-2 font-semibold text-slate-950 transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
               onClick={joinRoom}
               disabled={loading}
             >
@@ -410,7 +406,7 @@ export default function Home() {
                 )}
                 {room.phase === "lobby" && isHost && (
                   <button
-                    className="rounded-xl bg-emerald-300 px-4 py-2 text-sm font-semibold text-slate-950"
+                    className="rounded-xl bg-emerald-300 px-4 py-2 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
                     onClick={() => void sendAction({ type: "start" })}
                     disabled={loading || importingQuestions}
                   >
@@ -455,7 +451,7 @@ export default function Home() {
             )}
           </section>
 
-          {room.phase !== "lobby" && room.phase !== "final" && room.phase !== "finished" && (
+          {room.phase !== "lobby" && room.phase !== "finished" && (
             <section className="overflow-hidden rounded-3xl border border-cyan-400/30 bg-slate-900/70 p-4 shadow-xl backdrop-blur">
               <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-cyan-200">
                 <span className="rounded-full border border-cyan-300/60 bg-cyan-400/10 px-3 py-1 font-semibold text-cyan-100">
@@ -476,7 +472,7 @@ export default function Home() {
                       {category.clues.map((clue) => (
                         <button
                           key={clue.id}
-                          className="w-full rounded-lg border border-slate-700 px-2 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50"
+                          className="w-full rounded-lg border border-slate-700 px-2 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
                           onClick={() => void sendAction({ type: "select", clueId: clue.id })}
                           disabled={!isSelector || clue.used || room.phase !== "board" || loading}
                         >
@@ -496,7 +492,7 @@ export default function Home() {
               {hostPlayer ? (
                 <div className="mt-4 rounded-xl border border-amber-300/70 bg-amber-400/10 p-3 text-sm text-amber-100">
                   <div className="font-semibold">{hostPlayer.name}{hostPlayer.id === session.playerId ? " (you)" : ""} [host]</div>
-                  <div className="mt-1 text-xs text-amber-200">Moderator only: judges spoken answers and resolves Final.</div>
+                  <div className="mt-1 text-xs text-amber-200">Moderator only: judges spoken answers and keeps the board moving.</div>
                 </div>
               ) : (
                 <div className="mt-4 rounded-xl border border-slate-700 bg-slate-950/70 p-3 text-sm text-slate-300">
@@ -573,10 +569,20 @@ export default function Home() {
                   </div>
                 )}
 
+                {isHost && room.phase === "clue" && (
+                  <button
+                    className="mt-4 rounded-xl bg-slate-300 px-4 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+                    onClick={() => void sendAction({ type: "skipClue" })}
+                    disabled={loading}
+                  >
+                    Continue without buzz
+                  </button>
+                )}
+
                 {!isHost && (
                   <div className="mt-4 flex flex-wrap gap-2">
                     <button
-                      className="rounded-xl bg-fuchsia-300 px-4 py-2 font-semibold text-slate-950 disabled:opacity-50"
+                      className="rounded-xl bg-fuchsia-300 px-4 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
                       onClick={() => void sendAction({ type: "buzz" })}
                       disabled={!canBuzz || loading}
                     >
@@ -615,14 +621,16 @@ export default function Home() {
                     <p className="text-xs text-amber-200">Expected answer: {room.activeClue.expectedAnswer}</p>
                     <div className="flex gap-2">
                       <button
-                        className="rounded-xl bg-emerald-300 px-4 py-2 font-semibold text-slate-950"
+                        className="rounded-xl bg-emerald-300 px-4 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
                         onClick={() => void sendAction({ type: "judge", isCorrect: true })}
+                        disabled={loading}
                       >
                         Correct
                       </button>
                       <button
-                        className="rounded-xl bg-rose-300 px-4 py-2 font-semibold text-slate-950"
+                        className="rounded-xl bg-rose-300 px-4 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
                         onClick={() => void sendAction({ type: "judge", isCorrect: false })}
+                        disabled={loading}
                       >
                         Wrong
                       </button>
@@ -634,72 +642,43 @@ export default function Home() {
           )}
 
           {room.phase === "finished" && (
-            <section className="rounded-3xl border border-emerald-300/50 bg-slate-900/70 p-6 text-center">
+            <section className="rounded-3xl border border-emerald-300/50 bg-slate-900/70 p-6">
               <h3 className="text-2xl font-bold text-emerald-200">Match complete</h3>
-              <p className="mt-2 text-slate-200">Final Jeopardy is resolved. Open a new room for the next match.</p>
-            </section>
-          )}
+              <p className="mt-2 text-slate-200">Great game. Here is the final podium and ranking.</p>
 
-          {room.phase === "final" && final && (
-            <section className="rounded-3xl border border-sky-300/50 bg-slate-900/80 p-6 shadow-xl">
-              <p className="text-sm uppercase tracking-wide text-sky-200">Final Jeopardy</p>
-              <p className="mt-2 text-xl font-semibold text-white">{final.question}</p>
-              <p className="mt-2 text-xs text-slate-300">
-                Submitted: {final.submissionCount} / {contestants.length}
-              </p>
-
-              {!isHost && !finalSubmitted && !final.resolved && (
-                <div className="mt-4 grid gap-3 sm:grid-cols-[180px,1fr,auto]">
-                  <input
-                    className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-slate-100 outline-none ring-cyan-300 transition focus:ring"
-                    type="number"
-                    min={0}
-                    max={Math.max(0, self?.score ?? 0)}
-                    value={finalWager}
-                    onChange={(event) => setFinalWager(event.target.value)}
-                    placeholder="Wager"
-                  />
-                  <input
-                    className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-slate-100 outline-none ring-cyan-300 transition focus:ring"
-                    value={finalAnswer}
-                    onChange={(event) => setFinalAnswer(event.target.value)}
-                    placeholder="Final answer"
-                  />
-                  <button
-                    className="rounded-xl bg-cyan-300 px-4 py-2 font-semibold text-slate-950 disabled:opacity-60"
-                    onClick={() =>
-                      void sendAction({
-                        type: "finalSubmit",
-                        wager: Number(finalWager || 0),
-                        answer: finalAnswer,
-                      })
-                    }
-                    disabled={loading || !finalAnswer.trim()}
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                {podium.map((player, index) => (
+                  <div
+                    key={player.id}
+                    className={`rounded-2xl border p-4 text-center ${
+                      index === 0
+                        ? "border-amber-300/70 bg-amber-300/15"
+                        : index === 1
+                          ? "border-slate-300/70 bg-slate-300/10"
+                          : "border-orange-300/70 bg-orange-300/10"
+                    }`}
                   >
-                    Submit Final
-                  </button>
+                    <p className="text-xs uppercase tracking-wide text-slate-200">#{index + 1}</p>
+                    <p className="mt-1 font-semibold text-white">{player.name}</p>
+                    <p className="mt-1 text-2xl font-bold text-cyan-100">{player.score}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-6 rounded-2xl border border-white/15 bg-slate-950/60 p-4">
+                <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Ranking</h4>
+                <div className="mt-3 space-y-2">
+                  {ranking.map((player, index) => (
+                    <div key={player.id} className="flex items-center justify-between rounded-lg bg-slate-900/70 px-3 py-2">
+                      <span className="text-sm text-slate-100">
+                        {index + 1}. {player.name}
+                        {player.id === session.playerId ? " (you)" : ""}
+                      </span>
+                      <span className="font-semibold text-cyan-200">{player.score}</span>
+                    </div>
+                  ))}
                 </div>
-              )}
-
-              {finalSubmitted && !final.resolved && (
-                <p className="mt-3 text-sm text-emerald-200">
-                  Your final answer is locked with wager {selfFinal?.wager}.
-                </p>
-              )}
-
-              {isHost && !final.resolved && (
-                <button
-                  className="mt-4 rounded-xl bg-emerald-300 px-4 py-2 text-sm font-semibold text-slate-950 disabled:opacity-60"
-                  onClick={() => void sendAction({ type: "finalResolve" })}
-                  disabled={!allFinalSubmitted || loading}
-                >
-                  Resolve Final
-                </button>
-              )}
-
-              {final.resolved && (
-                <p className="mt-4 text-sm text-amber-200">Expected answer: {final.expectedAnswer}</p>
-              )}
+              </div>
             </section>
           )}
         </>
