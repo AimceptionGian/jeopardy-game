@@ -59,6 +59,7 @@ export default function Home() {
   const [history, setHistory] = useState<MatchHistoryEntry[]>([]);
   const [historyMenuOpen, setHistoryMenuOpen] = useState(false);
   const [importingQuestions, setImportingQuestions] = useState(false);
+  const [clueOverlayOpen, setClueOverlayOpen] = useState(true);
   const [message, setMessage] = useState("Create or join a room to begin.");
   const [loading, setLoading] = useState(false);
   const roomNotFoundCount = useState(0);
@@ -190,6 +191,13 @@ export default function Home() {
       !room.activeClue.attemptedPlayerIds.includes(session.playerId),
   );
   const isBuzzed = Boolean(room && session && room.activeClue?.buzzedPlayerId === session.playerId);
+  const showClueOverlay = Boolean(room?.activeClue && clueOverlayOpen);
+
+  useEffect(() => {
+    if (room?.activeClue) {
+      setClueOverlayOpen(true);
+    }
+  }, [room?.activeClue?.id]);
 
   const persistSession = useCallback((nextSession: Session) => {
     setSession(nextSession);
@@ -534,12 +542,29 @@ export default function Home() {
             </section>
           )}
 
-          {room.activeClue && (
+          {room.activeClue && !showClueOverlay && (
+            <button
+              className="fixed bottom-4 right-4 z-40 rounded-xl border border-cyan-300/70 bg-cyan-400/15 px-4 py-2 text-sm font-semibold text-cyan-100 backdrop-blur transition hover:bg-cyan-400/25"
+              onClick={() => setClueOverlayOpen(true)}
+            >
+              Reopen active question
+            </button>
+          )}
+
+          {showClueOverlay && room.activeClue && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4">
               <section className="w-full max-w-3xl rounded-3xl border border-amber-300/50 bg-slate-900/95 p-6 shadow-2xl">
-                <p className="text-sm uppercase tracking-wide text-amber-200">
-                  {room.activeClue.categoryTitle} (${room.activeClue.value})
-                </p>
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm uppercase tracking-wide text-amber-200">
+                    {room.activeClue.categoryTitle} (${room.activeClue.value})
+                  </p>
+                  <button
+                    className="rounded-lg border border-slate-500 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-200 transition hover:border-slate-300"
+                    onClick={() => setClueOverlayOpen(false)}
+                  >
+                    Minimize
+                  </button>
+                </div>
                 <p className="mt-2 text-xl font-semibold text-white">{room.activeClue.question}</p>
 
                 {isHost && (
