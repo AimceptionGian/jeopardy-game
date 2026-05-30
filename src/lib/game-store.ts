@@ -6,10 +6,17 @@ const ROOM_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const DATABASE_NAME = process.env.MONGODB_DB ?? "jeopardy-online";
 const ROOMS_COLLECTION = "rooms";
 const HISTORY_COLLECTION = "match-history";
+const ROOM_INACTIVITY_MS = 2 * 60 * 60 * 1000;
+
+interface RoomDocument extends Room {
+  expiresAt: Date;
+}
 
 declare global {
   // eslint-disable-next-line no-var
   var __mongodbClientPromise: Promise<MongoClient> | undefined;
+  // eslint-disable-next-line no-var
+  var __mongodbIndexesReadyPromise: Promise<void> | undefined;
 }
 
 async function getMongoClient() {
@@ -28,17 +35,39 @@ async function getMongoClient() {
 
 async function getDb(): Promise<Db> {
   const client = await getMongoClient();
-  return client.db(DATABASE_NAME);
+  const db = client.db(DATABASE_NAME);
+
+  if (!globalThis.__mongodbIndexesReadyPromise) {
+    globalThis.__mongodbIndexesReadyPromise = Promise.all([
+      db.collection<RoomDocument>(ROOMS_COLLECTION).createIndex({ code: 1 }, { unique: true }),
+      db.collection<RoomDocument>(ROOMS_COLLECTION).createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+      db.collection<HistoryDocument>(HISTORY_COLLECTION).createIndex({ key: 1 }, { unique: true }),
+    ]).then(() => undefined);
+  }
+
+  await globalThis.__mongodbIndexesReadyPromise;
+  return db;
+}
+
+function roomExpiresAt(timestamp = now()) {
+  return new Date(timestamp + ROOM_INACTIVITY_MS);
 }
 
 async function loadRoom(roomCode: string): Promise<Room | null> {
   const db = await getDb();
-  return db.collection<Room>(ROOMS_COLLECTION).findOne({ code: roomCode.toUpperCase() });
+  const roomDoc = await db.collection<RoomDocument>(ROOMS_COLLECTION).findOne({ code: roomCode.toUpperCase() });
+  if (!roomDoc) {
+    return null;
+  }
+  const { expiresAt: _expiresAt, ...room } = roomDoc;
+  return room;
 }
 
 async function saveRoom(room: Room): Promise<void> {
   const db = await getDb();
-  await db.collection<Room>(ROOMS_COLLECTION).replaceOne({ code: room.code }, room, { upsert: true });
+  await db
+    .collection<RoomDocument>(ROOMS_COLLECTION)
+    .replaceOne({ code: room.code }, { ...room, expiresAt: roomExpiresAt() }, { upsert: true });
 }
 
 interface HistoryDocument {
@@ -285,6 +314,7 @@ export async function markOnline(roomCode: string, playerId: string) {
         "players.$.connected": true,
         "players.$.lastSeenAt": updatedAt,
         updatedAt,
+        expiresAt: roomExpiresAt(updatedAt),
       },
       $inc: { eventVersion: 1 },
     },
