@@ -1,29 +1,64 @@
-import { kv } from "@vercel/kv";
+import { MongoClient, type Db } from "mongodb";
 import { sampleBoard } from "@/lib/sample-board";
 import type { Category, MatchHistoryEntry, PublicRoomState, Room } from "@/lib/types";
 
 const ROOM_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const ROOM_TTL_SECONDS = 60 * 60 * 24; // 24 hours
-const HISTORY_KEY = "jeopardy:history";
+const DATABASE_NAME = process.env.MONGODB_DB ?? "jeopardy-online";
+const ROOMS_COLLECTION = "rooms";
+const HISTORY_COLLECTION = "match-history";
 
-function roomKey(code: string) {
-  return `room:${code.toUpperCase()}`;
+declare global {
+  // eslint-disable-next-line no-var
+  var __mongodbClientPromise: Promise<MongoClient> | undefined;
+}
+
+async function getMongoClient() {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) {
+    throw new Error("MONGODB_URI is not configured.");
+  }
+
+  if (!globalThis.__mongodbClientPromise) {
+    const client = new MongoClient(uri);
+    globalThis.__mongodbClientPromise = client.connect();
+  }
+
+  return globalThis.__mongodbClientPromise;
+}
+
+async function getDb(): Promise<Db> {
+  const client = await getMongoClient();
+  return client.db(DATABASE_NAME);
 }
 
 async function loadRoom(roomCode: string): Promise<Room | null> {
-  return kv.get<Room>(roomKey(roomCode));
+  const db = await getDb();
+  return db.collection<Room>(ROOMS_COLLECTION).findOne({ code: roomCode.toUpperCase() });
 }
 
 async function saveRoom(room: Room): Promise<void> {
-  await kv.set(roomKey(room.code), room, { ex: ROOM_TTL_SECONDS });
+  const db = await getDb();
+  await db.collection<Room>(ROOMS_COLLECTION).replaceOne({ code: room.code }, room, { upsert: true });
+}
+
+interface HistoryDocument {
+  key: string;
+  entries: MatchHistoryEntry[];
 }
 
 async function loadHistory(): Promise<MatchHistoryEntry[]> {
-  return (await kv.get<MatchHistoryEntry[]>(HISTORY_KEY)) ?? [];
+  const db = await getDb();
+  const history = await db.collection<HistoryDocument>(HISTORY_COLLECTION).findOne({ key: HISTORY_COLLECTION });
+  return history?.entries ?? [];
 }
 
 async function saveHistory(entries: MatchHistoryEntry[]): Promise<void> {
-  await kv.set(HISTORY_KEY, entries);
+  const db = await getDb();
+  await db.collection<HistoryDocument>(HISTORY_COLLECTION).replaceOne(
+    { key: HISTORY_COLLECTION },
+    { key: HISTORY_COLLECTION, entries },
+    { upsert: true },
+  );
 }
 
 const FINAL_PROMPT = {
