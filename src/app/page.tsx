@@ -99,6 +99,11 @@ export default function Home() {
       setMessage(`Room ${state.code} | Phase: ${state.phase}`);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Failed to sync room state.";
+      if (errorMessage.toLowerCase().includes("player not found")) {
+        clearSession();
+        setMessage("Your player session is no longer valid. Please join or create a room again.");
+        return;
+      }
       if (errorMessage.toLowerCase().includes("room not found")) {
         roomNotFoundCount[1]((prev) => {
           const next = prev + 1;
@@ -116,7 +121,7 @@ export default function Home() {
       }
       setMessage(errorMessage);
     }
-  }, [session, roomNotFoundCount]);
+  }, [session, roomNotFoundCount, clearSession]);
 
   useEffect(() => {
     if (!session) {
