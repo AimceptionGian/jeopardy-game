@@ -4,6 +4,7 @@ import {
   resolveFinal,
   resetRoom,
   selectClue,
+  setRoomBoard,
   setRoomCategories,
   skipClue,
   startGame,
@@ -23,6 +24,7 @@ type ActionType =
   | "judge"
   | "finalSubmit"
   | "finalResolve"
+  | "setBoard"
   | "setCategories";
 
 interface ActionBody {
@@ -33,6 +35,7 @@ interface ActionBody {
   isCorrect?: boolean;
   wager?: number;
   categories?: Category[];
+  boardId?: string;
 }
 
 export async function POST(
@@ -84,6 +87,12 @@ export async function POST(
           return NextResponse.json({ error: "categories are required for setCategories" }, { status: 400 });
         }
         await setRoomCategories(roomCode, playerId, body.categories);
+        break;
+      case "setBoard":
+        if (!body.boardId) {
+          return NextResponse.json({ error: "boardId is required for setBoard" }, { status: 400 });
+        }
+        await setRoomBoard(roomCode, playerId, body.boardId);
         break;
       default:
         return NextResponse.json({ error: "Unsupported action type" }, { status: 400 });

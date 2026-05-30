@@ -460,6 +460,11 @@ export async function listBoardsFromLibrary(): Promise<BoardSummary[]> {
   }));
 }
 
+async function getBoardFromLibrary(boardId: string): Promise<BoardDocument | null> {
+  const db = await getDb();
+  return db.collection<BoardDocument>(BOARDS_COLLECTION).findOne({ id: boardId });
+}
+
 export async function deleteBoardFromLibrary(boardId: string) {
   const db = await getDb();
   const result = await db.collection<BoardDocument>(BOARDS_COLLECTION).deleteOne({ id: boardId });
@@ -533,6 +538,34 @@ export async function setRoomCategories(roomCode: string, playerId: string, cate
   room.buzzedPlayerId = undefined;
   room.submittedAnswer = undefined;
   room.attemptedPlayerIds = [];
+  touchRoom(room);
+  await saveRoom(room);
+}
+
+export async function setRoomBoard(roomCode: string, playerId: string, boardId: string) {
+  const room = await getRoomOrThrow(roomCode);
+  const player = getPlayerOrThrow(room, playerId);
+
+  if (!player.isHost) {
+    throw new Error("Only host can select boards.");
+  }
+
+  if (room.phase !== "lobby") {
+    throw new Error("Boards can only be selected before the match starts.");
+  }
+
+  const board = await getBoardFromLibrary(boardId);
+  if (!board) {
+    throw new Error("Selected board was not found.");
+  }
+
+  validateCategories(board.categories);
+  room.categories = cloneCategories(board.categories);
+  room.usedClueIds = [];
+  clearActiveClue(room);
+  room.finalPrompt = undefined;
+  room.finalSubmissions = {};
+  room.finalResolved = false;
   touchRoom(room);
   await saveRoom(room);
 }

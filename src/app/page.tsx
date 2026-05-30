@@ -9,6 +9,15 @@ type Session = {
   name: string;
 };
 
+type BoardSummary = {
+  id: string;
+  name: string;
+  categoryCount: number;
+  clueCount: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
 const STORAGE_KEY = "jeopardy-session-v1";
 
 function readStoredSession(): Session | null {
@@ -55,6 +64,9 @@ export default function Home() {
   const [session, setSession] = useState<Session | null>(null);
   const [room, setRoom] = useState<PublicRoomState | null>(null);
   const [importingQuestions, setImportingQuestions] = useState(false);
+  const [boardLibrary, setBoardLibrary] = useState<BoardSummary[]>([]);
+  const [selectedBoardId, setSelectedBoardId] = useState("");
+  const [loadingBoards, setLoadingBoards] = useState(false);
   const [clueOverlayOpen, setClueOverlayOpen] = useState(true);
   const [message, setMessage] = useState("Create or join a room to begin.");
   const [loading, setLoading] = useState(false);
@@ -168,6 +180,32 @@ export default function Home() {
     }
   }, [room?.activeClue?.id]);
 
+  const loadBoardLibrary = useCallback(async () => {
+    setLoadingBoards(true);
+    try {
+      const data = await api<{ boards: BoardSummary[] }>("/api/boards");
+      setBoardLibrary(data.boards);
+      setSelectedBoardId((prev) => {
+        if (prev && data.boards.some((board) => board.id === prev)) {
+          return prev;
+        }
+        return data.boards[0]?.id ?? "";
+      });
+    } catch {
+      // Board library is optional in lobby.
+    } finally {
+      setLoadingBoards(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!session || !room || !isHost || room.phase !== "lobby") {
+      return;
+    }
+
+    void loadBoardLibrary();
+  }, [isHost, loadBoardLibrary, room, room?.phase, session]);
+
   const persistSession = useCallback((nextSession: Session) => {
     setSession(nextSession);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(nextSession));
@@ -218,12 +256,24 @@ export default function Home() {
   }
 
   async function sendAction(payload: {
-    type: "start" | "reset" | "select" | "buzz" | "skipClue" | "submit" | "judge" | "finalSubmit" | "finalResolve" | "setCategories";
+    type:
+      | "start"
+      | "reset"
+      | "select"
+      | "buzz"
+      | "skipClue"
+      | "submit"
+      | "judge"
+      | "finalSubmit"
+      | "finalResolve"
+      | "setCategories"
+      | "setBoard";
     clueId?: string;
     answer?: string;
     isCorrect?: boolean;
     wager?: number;
     categories?: Category[];
+    boardId?: string;
   }) {
     if (!session) {
       return;
@@ -367,6 +417,49 @@ export default function Home() {
               <p className="mt-4 text-xs text-cyan-200">
                 Import a JSON question set before starting. Without import, the default sample board is used.
               </p>
+            )}
+
+            {room.phase === "lobby" && isHost && (
+              <div className="mt-3 rounded-xl border border-cyan-300/30 bg-slate-950/60 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-cyan-200">Board from DB</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <select
+                    className="min-w-[260px] rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-cyan-300 transition focus:ring"
+                    value={selectedBoardId}
+                    onChange={(event) => setSelectedBoardId(event.target.value)}
+                    disabled={loadingBoards || boardLibrary.length === 0}
+                  >
+                    {boardLibrary.length === 0 ? (
+                      <option value="">No DB boards found</option>
+                    ) : (
+                      boardLibrary.map((board) => (
+                        <option key={board.id} value={board.id}>
+                          {board.name} ({board.categoryCount}x{Math.round(board.clueCount / Math.max(board.categoryCount, 1))})
+                        </option>
+                      ))
+                    )}
+                  </select>
+                  <button
+                    className="rounded-xl bg-cyan-300 px-4 py-2 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+                    onClick={() => {
+                      if (!selectedBoardId) {
+                        return;
+                      }
+                      void sendAction({ type: "setBoard", boardId: selectedBoardId });
+                    }}
+                    disabled={loadingBoards || !selectedBoardId}
+                  >
+                    Use selected board
+                  </button>
+                  <button
+                    className="rounded-xl border border-slate-500 px-3 py-2 text-xs font-semibold text-slate-200 disabled:cursor-not-allowed disabled:text-slate-500"
+                    onClick={() => void loadBoardLibrary()}
+                    disabled={loadingBoards}
+                  >
+                    {loadingBoards ? "Loading..." : "Refresh"}
+                  </button>
+                </div>
+              </div>
             )}
 
             {room.phase === "lobby" && (
