@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Category, PublicRoomState } from "@/lib/types";
 
 type Session = {
@@ -71,6 +71,7 @@ export default function Home() {
   const [message, setMessage] = useState("Create or join a room to begin.");
   const [loading, setLoading] = useState(false);
   const roomNotFoundCount = useState(0);
+  const loadedBoardsForRoomRef = useRef<string | null>(null);
 
   useEffect(() => {
     const restoreSession = setTimeout(() => {
@@ -203,8 +204,13 @@ export default function Home() {
       return;
     }
 
+    if (loadedBoardsForRoomRef.current === session.roomCode) {
+      return;
+    }
+
+    loadedBoardsForRoomRef.current = session.roomCode;
     void loadBoardLibrary();
-  }, [isHost, loadBoardLibrary, room, room?.phase, session]);
+  }, [isHost, loadBoardLibrary, room?.phase, session?.roomCode, session, room]);
 
   const persistSession = useCallback((nextSession: Session) => {
     setSession(nextSession);
