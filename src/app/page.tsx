@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { Category, MatchHistoryEntry, PublicRoomState } from "@/lib/types";
+import type { Category, PublicRoomState } from "@/lib/types";
 
 type Session = {
   roomCode: string;
@@ -54,22 +54,11 @@ export default function Home() {
   const [joinCode, setJoinCode] = useState("");
   const [session, setSession] = useState<Session | null>(null);
   const [room, setRoom] = useState<PublicRoomState | null>(null);
-  const [history, setHistory] = useState<MatchHistoryEntry[]>([]);
-  const [historyMenuOpen, setHistoryMenuOpen] = useState(false);
   const [importingQuestions, setImportingQuestions] = useState(false);
   const [clueOverlayOpen, setClueOverlayOpen] = useState(true);
   const [message, setMessage] = useState("Create or join a room to begin.");
   const [loading, setLoading] = useState(false);
   const roomNotFoundCount = useState(0);
-
-  const loadHistory = useCallback(async () => {
-    try {
-      const data = await api<{ matches: MatchHistoryEntry[] }>("/api/history?limit=8");
-      setHistory(data.matches);
-    } catch {
-      // History is optional for gameplay, so keep the app running if this request fails.
-    }
-  }, []);
 
   useEffect(() => {
     const restoreSession = setTimeout(() => {
@@ -144,22 +133,6 @@ export default function Home() {
       clearInterval(timer);
     };
   }, [pollRoom, session]);
-
-  useEffect(() => {
-    const initialHistorySync = setTimeout(() => {
-      void loadHistory();
-    }, 0);
-    return () => clearTimeout(initialHistorySync);
-  }, [loadHistory]);
-
-  useEffect(() => {
-    if (room?.phase === "finished") {
-      const refreshHistory = setTimeout(() => {
-        void loadHistory();
-      }, 0);
-      return () => clearTimeout(refreshHistory);
-    }
-  }, [loadHistory, room?.phase]);
 
   const self = useMemo(
     () => room?.players.find((player) => player.id === session?.playerId),
@@ -299,47 +272,15 @@ export default function Home() {
       <header className="relative rounded-3xl border border-white/20 bg-slate-950/70 p-6 shadow-2xl backdrop-blur">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <h1 className="text-3xl font-bold tracking-tight text-cyan-300 sm:text-4xl">Jeopardy Online MVP</h1>
-          <button
+          <a
             className="rounded-xl border border-cyan-300/60 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-400/20"
-            onClick={() => setHistoryMenuOpen((prev) => !prev)}
-            type="button"
+            href="/admin"
           >
-            History ({history.length})
-          </button>
+            Admin
+          </a>
         </div>
         <p className="mt-2 text-sm text-slate-200">React + API prototype for room-based multiplayer.</p>
         <p className="mt-4 rounded-xl bg-slate-900/80 px-3 py-2 text-xs text-cyan-200">{message}</p>
-
-        {historyMenuOpen && (
-          <div className="mt-4 rounded-2xl border border-white/20 bg-slate-900/95 p-4 shadow-xl">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-white">Recent Match History</h3>
-              <button
-                className="rounded-lg border border-slate-500 px-2 py-1 text-xs text-slate-200"
-                onClick={() => setHistoryMenuOpen(false)}
-                type="button"
-              >
-                Close
-              </button>
-            </div>
-            {history.length === 0 ? (
-              <p className="text-sm text-slate-300">No finished matches yet.</p>
-            ) : (
-              <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
-                {history.map((entry) => (
-                  <div key={entry.id} className="rounded-xl bg-slate-950/70 p-3 text-sm text-slate-200">
-                    <div className="font-semibold text-cyan-200">
-                      Room {entry.roomCode} | Winner: {entry.winnerName} ({entry.winnerScore})
-                    </div>
-                    <div className="mt-1 text-xs text-slate-300">
-                      {new Date(entry.finishedAt).toLocaleString()} | {entry.players.map((player) => `${player.name}: ${player.score}`).join(" | ")}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
       </header>
 
       {!session && (

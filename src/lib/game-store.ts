@@ -6,10 +6,28 @@ const ROOM_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const DATABASE_NAME = process.env.MONGODB_DB ?? "jeopardy-online";
 const ROOMS_COLLECTION = "rooms";
 const HISTORY_COLLECTION = "match-history";
+const BOARDS_COLLECTION = "boards";
 const ROOM_INACTIVITY_MS = 2 * 60 * 60 * 1000;
 
 interface RoomDocument extends Room {
   expiresAt: Date;
+}
+
+interface BoardDocument {
+  id: string;
+  name: string;
+  categories: Category[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface BoardSummary {
+  id: string;
+  name: string;
+  categoryCount: number;
+  clueCount: number;
+  createdAt: number;
+  updatedAt: number;
 }
 
 declare global {
@@ -42,6 +60,8 @@ async function getDb(): Promise<Db> {
       db.collection<RoomDocument>(ROOMS_COLLECTION).createIndex({ code: 1 }, { unique: true }),
       db.collection<RoomDocument>(ROOMS_COLLECTION).createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       db.collection<HistoryDocument>(HISTORY_COLLECTION).createIndex({ key: 1 }, { unique: true }),
+      db.collection<BoardDocument>(BOARDS_COLLECTION).createIndex({ id: 1 }, { unique: true }),
+      db.collection<BoardDocument>(BOARDS_COLLECTION).createIndex({ updatedAt: -1 }),
     ]).then(() => undefined);
   }
 
@@ -383,6 +403,67 @@ export async function getRoomState(roomCode: string, playerId: string): Promise<
 export async function getMatchHistory(limit = 15) {
   const history = await loadHistory();
   return history.slice(0, Math.max(1, Math.min(50, limit)));
+}
+
+export async function deleteMatchHistoryEntry(entryId: string) {
+  const history = await loadHistory();
+  const next = history.filter((entry) => entry.id !== entryId);
+  const deleted = next.length !== history.length;
+  if (!deleted) {
+    return false;
+  }
+  await saveHistory(next);
+  return true;
+}
+
+export async function clearMatchHistory() {
+  await saveHistory([]);
+}
+
+export async function saveBoardToLibrary(name: string, categories: Category[]) {
+  const trimmedName = name.trim();
+  if (!trimmedName) {
+    throw new Error("Board name is required.");
+  }
+
+  validateCategories(categories);
+
+  const timestamp = now();
+  const board: BoardDocument = {
+    id: generateId("board"),
+    name: trimmedName,
+    categories: cloneCategories(categories),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+
+  const db = await getDb();
+  await db.collection<BoardDocument>(BOARDS_COLLECTION).insertOne(board);
+  return board.id;
+}
+
+export async function listBoardsFromLibrary(): Promise<BoardSummary[]> {
+  const db = await getDb();
+  const boards = await db
+    .collection<BoardDocument>(BOARDS_COLLECTION)
+    .find({}, { projection: { _id: 0 } })
+    .sort({ updatedAt: -1 })
+    .toArray();
+
+  return boards.map((board) => ({
+    id: board.id,
+    name: board.name,
+    categoryCount: board.categories.length,
+    clueCount: board.categories.reduce((sum, category) => sum + category.clues.length, 0),
+    createdAt: board.createdAt,
+    updatedAt: board.updatedAt,
+  }));
+}
+
+export async function deleteBoardFromLibrary(boardId: string) {
+  const db = await getDb();
+  const result = await db.collection<BoardDocument>(BOARDS_COLLECTION).deleteOne({ id: boardId });
+  return result.deletedCount > 0;
 }
 
 export async function startGame(roomCode: string, playerId: string) {
