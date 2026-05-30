@@ -274,20 +274,36 @@ export async function joinRoom(roomCode: string, playerName: string) {
 }
 
 export async function markOnline(roomCode: string, playerId: string) {
-  const room = await getRoomOrThrow(roomCode);
-  const player = getPlayerOrThrow(room, playerId);
-  player.connected = true;
-  player.lastSeenAt = now();
-  touchRoom(room);
-  await saveRoom(room);
+  const code = roomCode.toUpperCase();
+  const db = await getDb();
+  const updatedAt = now();
+
+  const result = await db.collection(ROOMS_COLLECTION).updateOne(
+    { code, "players.id": playerId },
+    {
+      $set: {
+        "players.$.connected": true,
+        "players.$.lastSeenAt": updatedAt,
+        updatedAt,
+      },
+      $inc: { eventVersion: 1 },
+    },
+  );
+
+  if (result.matchedCount > 0) {
+    return;
+  }
+
+  const room = await loadRoom(code);
+  if (!room) {
+    throw new Error("Room not found.");
+  }
+  throw new Error("Player not found in room.");
 }
 
 export async function getRoomState(roomCode: string, playerId: string): Promise<PublicRoomState> {
   const room = await getRoomOrThrow(roomCode);
   const viewer = getPlayerOrThrow(room, playerId);
-  viewer.connected = true;
-  viewer.lastSeenAt = now();
-  await saveRoom(room);
 
   const activeCategory = room.categories.find((category) =>
     category.clues.some((entry) => entry.id === room.activeClueId),
