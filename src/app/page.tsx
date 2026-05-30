@@ -334,7 +334,7 @@ export default function Home() {
                       type="file"
                       accept="application/json,.json"
                       className="hidden"
-                      disabled={loading || importingQuestions}
+                      disabled={importingQuestions}
                       onChange={(event) => {
                         const file = event.target.files?.[0];
                         if (file) {
@@ -349,7 +349,7 @@ export default function Home() {
                   <button
                     className="rounded-xl bg-emerald-300 px-4 py-2 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
                     onClick={() => void sendAction({ type: "start" })}
-                    disabled={loading || importingQuestions}
+                    disabled={importingQuestions}
                   >
                     Start Match
                   </button>
@@ -410,16 +410,30 @@ export default function Home() {
                       {category.title}
                     </h3>
                     <div className="space-y-2">
-                      {category.clues.map((clue) => (
-                        <button
-                          key={clue.id}
-                          className="w-full rounded-lg border border-slate-700 px-2 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-500"
-                          onClick={() => void sendAction({ type: "select", clueId: clue.id })}
-                          disabled={!isSelector || clue.used || room.phase !== "board" || loading}
-                        >
-                          ${clue.value}
-                        </button>
-                      ))}
+                      {category.clues.map((clue) => {
+                        const canSelectClue = isSelector && room.phase === "board" && !clue.used;
+
+                        return (
+                          <button
+                            key={clue.id}
+                            className={`w-full rounded-lg border px-2 py-2 text-sm font-semibold transition ${
+                              clue.used
+                                ? "cursor-not-allowed border-slate-700 bg-slate-800 text-slate-500"
+                                : canSelectClue
+                                  ? "border-cyan-400/50 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/20"
+                                  : "cursor-default border-cyan-400/35 bg-slate-900 text-cyan-200"
+                            }`}
+                            onClick={() => {
+                              if (canSelectClue) {
+                                void sendAction({ type: "select", clueId: clue.id });
+                              }
+                            }}
+                            disabled={clue.used}
+                          >
+                            ${clue.value}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 ))}
@@ -514,7 +528,6 @@ export default function Home() {
                   <button
                     className="mt-4 rounded-xl bg-slate-300 px-4 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
                     onClick={() => void sendAction({ type: "skipClue" })}
-                    disabled={loading}
                   >
                     Continue without buzz
                   </button>
@@ -564,14 +577,12 @@ export default function Home() {
                       <button
                         className="rounded-xl bg-emerald-300 px-4 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
                         onClick={() => void sendAction({ type: "judge", isCorrect: true })}
-                        disabled={loading}
                       >
                         Correct
                       </button>
                       <button
                         className="rounded-xl bg-rose-300 px-4 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
                         onClick={() => void sendAction({ type: "judge", isCorrect: false })}
-                        disabled={loading}
                       >
                         Wrong
                       </button>
@@ -590,7 +601,6 @@ export default function Home() {
                   <button
                     className="rounded-xl bg-cyan-300 px-4 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
                     onClick={() => void sendAction({ type: "reset" })}
-                    disabled={loading}
                   >
                     New game (same lobby)
                   </button>
