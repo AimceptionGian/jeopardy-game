@@ -396,6 +396,9 @@ export default function Home() {
       const data = await api<{ boards: BoardSummary[] }>("/api/boards");
       setBoardLibrary(data.boards);
       setSelectedBoardId((prev) => {
+        if (room?.currentBoardId && data.boards.some((board) => board.id === room.currentBoardId)) {
+          return room.currentBoardId;
+        }
         if (prev && data.boards.some((board) => board.id === prev)) {
           return prev;
         }
@@ -406,7 +409,15 @@ export default function Home() {
     } finally {
       setLoadingBoards(false);
     }
-  }, []);
+  }, [room?.currentBoardId]);
+
+  useEffect(() => {
+    if (!room?.currentBoardId) {
+      return;
+    }
+
+    setSelectedBoardId(room.currentBoardId);
+  }, [room?.currentBoardId]);
 
   useEffect(() => {
     if (!session || !room || !isHost || room.phase !== "lobby") {

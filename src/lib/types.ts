@@ -50,6 +50,7 @@ export interface MatchHistoryEntry {
 export interface Room {
   code: string;
   mode: RoomMode;
+  currentBoardId?: string;
   phase: GamePhase;
   players: Player[];
   categories: Category[];
@@ -81,6 +82,7 @@ export interface Room {
 export interface PublicRoomState {
   code: string;
   mode: RoomMode;
+  currentBoardId?: string;
   phase: GamePhase;
   players: Player[];
   categories: Array<{

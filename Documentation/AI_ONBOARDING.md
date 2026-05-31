@@ -91,6 +91,8 @@ Diese Regeln sind verbindlich im aktuellen Stand umgesetzt:
 - Host kann in der Lobby JSON hochladen
 - Host kann in der Lobby ein gespeichertes DB-Board auswählen
 - Beim Anwenden eines DB-Boards werden Legacy-Daten vorab normalisiert (z. B. fehlende IDs oder numerische Strings), damit gespeicherte Alt-Boards stabil geladen werden
+- Neue Rooms nutzen standardmäßig das zuletzt aktualisierte DB-Board (kein hardcoded Fallback-Board mehr)
+- Der aktive Board-Stand wird über `currentBoardId` im Room-State geführt und an die Lobby-Dropdown-Auswahl gespiegelt
 - Admin-Konsole kann Boards als JSON in die DB laden und wieder löschen
 
 ### Match-History / Admin

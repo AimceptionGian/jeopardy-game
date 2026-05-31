@@ -1,5 +1,4 @@
 import { MongoClient, type Db } from "mongodb";
-import { sampleBoard } from "@/lib/sample-board";
 import type { Category, MatchHistoryEntry, PublicRoomState, Room, RoomMode } from "@/lib/types";
 
 const ROOM_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -308,9 +307,28 @@ export async function createRoom(hostName: string, categories?: Category[]) {
   const playerId = generateId("player");
   const roomCode = await generateRoomCode();
 
+  let currentBoardId: string | undefined;
+  let initialCategories: Category[];
+
+  if (categories) {
+    validateCategories(categories);
+    initialCategories = cloneCategories(categories);
+  } else {
+    const latestBoard = await getLatestBoardFromLibrary();
+    if (!latestBoard) {
+      throw new Error("No board found in DB. Please add a board in /admin first.");
+    }
+
+    const normalizedCategories = normalizeBoardCategories(latestBoard.categories);
+    validateCategories(normalizedCategories);
+    currentBoardId = latestBoard.id;
+    initialCategories = cloneCategories(normalizedCategories);
+  }
+
   const room: Room = {
     code: roomCode,
     mode: "online",
+    currentBoardId,
     phase: "lobby",
     players: [
       {
@@ -322,7 +340,7 @@ export async function createRoom(hostName: string, categories?: Category[]) {
         lastSeenAt: now(),
       },
     ],
-    categories: cloneCategories(categories ?? sampleBoard),
+    categories: initialCategories,
     hostId: playerId,
     selectorId: playerId,
     usedClueIds: [],
@@ -410,6 +428,7 @@ export async function getRoomState(roomCode: string, playerId: string): Promise<
   return {
     code: room.code,
     mode: room.mode,
+    currentBoardId: room.currentBoardId,
     phase: room.phase,
     players: room.players,
     categories: room.categories.map((category) => ({
@@ -520,6 +539,16 @@ async function getBoardFromLibrary(boardId: string): Promise<BoardDocument | nul
   return db.collection<BoardDocument>(BOARDS_COLLECTION).findOne({ id: boardId });
 }
 
+async function getLatestBoardFromLibrary(): Promise<BoardDocument | null> {
+  const db = await getDb();
+  return db
+    .collection<BoardDocument>(BOARDS_COLLECTION)
+    .find({}, { projection: { _id: 0 } })
+    .sort({ updatedAt: -1 })
+    .limit(1)
+    .next();
+}
+
 export async function deleteBoardFromLibrary(boardId: string) {
   const db = await getDb();
   const result = await db.collection<BoardDocument>(BOARDS_COLLECTION).deleteOne({ id: boardId });
@@ -546,7 +575,6 @@ export async function resetRoom(roomCode: string, playerId: string) {
   room.phase = "lobby";
   room.selectorId = room.hostId;
   room.usedClueIds = [];
-  room.categories = cloneCategories(sampleBoard);
   clearActiveClue(room);
   room.finalPrompt = undefined;
   room.finalSubmissions = {};
@@ -680,6 +708,7 @@ export async function setRoomCategories(roomCode: string, playerId: string, cate
 
   validateCategories(categories);
   room.categories = cloneCategories(categories);
+  room.currentBoardId = undefined;
   room.usedClueIds = [];
   room.activeClueId = undefined;
   room.buzzedPlayerId = undefined;
@@ -711,6 +740,7 @@ export async function setRoomBoard(roomCode: string, playerId: string, boardId: 
   const normalizedCategories = normalizeBoardCategories(board.categories);
   validateCategories(normalizedCategories);
   room.categories = cloneCategories(normalizedCategories);
+  room.currentBoardId = board.id;
   room.usedClueIds = [];
   clearActiveClue(room);
   room.finalPrompt = undefined;

@@ -15,6 +15,8 @@ Current product shape:
 - The same room can be reset back to the lobby for a new match.
 - Boards can be imported from JSON or selected from the DB in the lobby.
 - DB board selection in lobby now normalizes legacy board data (for example missing IDs/string values) before applying.
+- New rooms now default to the latest DB board (same source as lobby dropdown), not a hardcoded sample board.
+- Lobby board dropdown is synced with server-side `currentBoardId` to reliably show the actually active board.
 - An admin console can upload boards to the DB and manage match history.
 
 ## Local Quickstart
