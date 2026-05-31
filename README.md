@@ -9,6 +9,7 @@ Current product shape:
 - Host can remove/kick players in the lobby.
 - During active answers, host can trigger a 10s answer timer from the question popup.
 - Timer is shown to all players as a screen-edge progress bar and includes dramatic countdown audio.
+- Countdown stops immediately (visual + audio) as soon as host judges `Correct` or `Wrong`.
 - Global sound volume slider controls timer, success, and fail sounds.
 - No Final Jeopardy round.
 - Finished matches show a podium and full ranking.

@@ -39,12 +39,13 @@ cd /d C:\Users\Gian\Desktop\Coding\QuizWebsite\jeopardy-online
 8. Host bewertet korrekt/falsch
 9. Nur während ein Spieler antwortet (Host-Judging-Popup): Host kann `Start 10s Answer Timer` drücken
 10. Prüfen: Timer läuft 10s mit Sound und wird allen als Randbalken angezeigt
-11. Bei falsch: anderer Spieler kann buzzen (Steal) und mündlich antworten
-12. Wenn niemand buzzen will: Host klickt `Continue without buzz`
-13. Prüfen: Nächster Selector bleibt reihum
-14. Alle Fragen bis Match-Ende spielen
-15. Endscreen zeigt Podium + Rangliste
-16. Host klickt optional `New game (same lobby)` und alle landen wieder in derselben Lobby
+11. Prüfen: Bei `Correct` oder `Wrong` stoppt der laufende Timer sofort (Balken + Sound)
+12. Bei falsch: anderer Spieler kann buzzen (Steal) und mündlich antworten
+13. Wenn niemand buzzen will: Host klickt `Continue without buzz`
+14. Prüfen: Nächster Selector bleibt reihum
+15. Alle Fragen bis Match-Ende spielen
+16. Endscreen zeigt Podium + Rangliste
+17. Host klickt optional `New game (same lobby)` und alle landen wieder in derselben Lobby
 
 ### B) Local-Modus (ein Gerät)
 1. Host erstellt Room

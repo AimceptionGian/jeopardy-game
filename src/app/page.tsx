@@ -81,6 +81,8 @@ export default function Home() {
   const [soundVolume, setSoundVolume] = useState(70);
   const lastTimerEventIdRef = useRef<string | null>(null);
   const lastJudgeEventIdRef = useRef<string | null>(null);
+  const timerAudioContextRef = useRef<AudioContext | null>(null);
+  const timerAudioCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const restoreSession = setTimeout(() => {
@@ -217,6 +219,22 @@ export default function Home() {
   const podium = ranking.slice(0, 3);
   const timerProgress = timerDurationMs > 0 ? Math.max(0, Math.min(1, timerRemainingMs / timerDurationMs)) : 0;
 
+  const stopActiveTimer = useCallback(() => {
+    setTimerEndsAtMs(null);
+    setTimerRemainingMs(0);
+
+    if (timerAudioCloseTimeoutRef.current) {
+      clearTimeout(timerAudioCloseTimeoutRef.current);
+      timerAudioCloseTimeoutRef.current = null;
+    }
+
+    const context = timerAudioContextRef.current;
+    timerAudioContextRef.current = null;
+    if (context && context.state !== "closed") {
+      void context.close();
+    }
+  }, []);
+
   const playJudgeSound = useCallback((isCorrect: boolean) => {
     if (typeof window === "undefined") {
       return;
@@ -271,12 +289,16 @@ export default function Home() {
       return;
     }
 
+    stopActiveTimer();
+
     const context = new window.AudioContext();
+    timerAudioContextRef.current = context;
     const nowAt = context.currentTime + 0.02;
     const volume = Math.max(0, Math.min(1, soundVolume / 100));
 
     if (volume <= 0) {
       void context.close();
+      timerAudioContextRef.current = null;
       return;
     }
 
@@ -337,10 +359,20 @@ export default function Home() {
     finalHigh.start(finalAt + 0.02);
     finalHigh.stop(finalAt + 0.52);
 
-    setTimeout(() => {
+    timerAudioCloseTimeoutRef.current = setTimeout(() => {
+      if (timerAudioContextRef.current === context) {
+        timerAudioContextRef.current = null;
+      }
+      timerAudioCloseTimeoutRef.current = null;
       void context.close();
     }, 11500);
-  }, [soundVolume]);
+  }, [soundVolume, stopActiveTimer]);
+
+  useEffect(() => {
+    return () => {
+      stopActiveTimer();
+    };
+  }, [stopActiveTimer]);
 
   useEffect(() => {
     if (room?.activeClue) {
@@ -386,9 +418,16 @@ export default function Home() {
       return;
     }
 
+    stopActiveTimer();
     lastJudgeEventIdRef.current = event.id;
     playJudgeSound(event.isCorrect);
-  }, [room?.judgeEvent, playJudgeSound]);
+  }, [room?.judgeEvent, playJudgeSound, stopActiveTimer]);
+
+  useEffect(() => {
+    if (room?.phase !== "judging") {
+      stopActiveTimer();
+    }
+  }, [room?.phase, stopActiveTimer]);
 
   const loadBoardLibrary = useCallback(async () => {
     setLoadingBoards(true);
@@ -564,6 +603,11 @@ export default function Home() {
     } finally {
       setImportingQuestions(false);
     }
+  }
+
+  function handleJudgeAnswer(isCorrect: boolean) {
+    stopActiveTimer();
+    void sendAction({ type: "judge", isCorrect });
   }
 
   return (
@@ -1060,13 +1104,13 @@ export default function Home() {
                     <div className="flex gap-2">
                       <button
                         className="rounded-xl bg-emerald-300 px-4 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
-                        onClick={() => void sendAction({ type: "judge", isCorrect: true })}
+                        onClick={() => handleJudgeAnswer(true)}
                       >
                         Correct
                       </button>
                       <button
                         className="rounded-xl bg-rose-300 px-4 py-2 font-semibold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
-                        onClick={() => void sendAction({ type: "judge", isCorrect: false })}
+                        onClick={() => handleJudgeAnswer(false)}
                       >
                         Wrong
                       </button>

@@ -50,6 +50,7 @@ Diese Regeln sind verbindlich im aktuellen Stand umgesetzt:
 - Wenn niemand buzzern möchte, kann der Host `Continue without buzz` klicken.
 - Nur waehrend ein Spieler antwortet (Judging-Phase) kann der Host einen 10s Antwort-Timer ausloesen.
 - Der Timer wird allen als globaler Rand-Fortschrittsbalken angezeigt und blockiert keine Eingaben.
+- Sobald der Host `Correct` oder `Wrong` klickt, wird ein laufender Antwort-Timer sofort beendet (inklusive Sound).
 - Timer-/Success-/Fail-Sounds sind vorhanden; Lautstaerke wird ueber einen globalen UI-Regler gesetzt.
 - Die Frage bleibt offen, bis entweder:
   - jemand korrekt antwortet, oder
